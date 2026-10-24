@@ -74,6 +74,10 @@ pnpm db:start                  # Postgres embebido (puerto 54329)
 
 ## 5. Rol del orquestador (Claude)
 
+> **Comunicación con el usuario:** el usuario NO es técnico. Toda explicación, pregunta, plan o reporte
+> debe darse en lenguaje simple ("para dummies"): analogías cotidianas, sin jerga (o explicándola en una frase),
+> y siempre diciendo primero qué significa para él en la práctica. Los detalles técnicos solo si los pide.
+
 Para **cada módulo**:
 1. Analizar la arquitectura y el impacto.
 2. Delegar la lógica al agente especializado apropiado (`typescript-pro`, `nextjs-expert`, `database-expert`, `test-generator`, …) o implementarla directamente.
