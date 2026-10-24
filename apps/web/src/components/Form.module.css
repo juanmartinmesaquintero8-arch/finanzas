@@ -1,0 +1,20 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.money {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.amountInput {
+  font-size: 1.6rem;
+  font-weight: 800;
+  min-height: 56px;
+  font-variant-numeric: tabular-nums;
+}

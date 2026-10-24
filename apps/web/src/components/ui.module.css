@@ -1,0 +1,129 @@
+/* Piezas visuales compartidas: tarjetas, chips, campos y botones. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip[aria-checked='true'],
+.chip[aria-current='true'] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-contrast);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.input {
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  width: 100%;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--expense);
+}
+
+.error {
+  color: var(--expense);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.alert {
+  background: var(--expense-soft);
+  color: var(--expense);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-weight: 600;
+}
+
+.button {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.buttonGhost {
+  composes: button;
+  background: transparent;
+  color: var(--text);
+  border: 1.5px solid var(--border);
+}
+
+.buttonDanger {
+  composes: button;
+  background: var(--expense);
+  color: #fff;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 32px 16px;
+}
+
+.pageTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
