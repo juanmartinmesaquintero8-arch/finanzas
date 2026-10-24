@@ -54,16 +54,16 @@ describe('nextOccurrence', () => {
   it('mensual: siguiente día 5 desde hoy', () => {
     expect(nextOccurrence({ frequency: 'MONTHLY', startDate: '2026-01-05', endDate: null, settledThrough: null }, '2026-03-10')).toBe('2026-04-05');
   });
-  it('mensual con settledThrough: la siguiente tras lo liquidado', () => {
+  it('mensual con settledThrough: la siguiente tras lo liquidado y desde hoy', () => {
     expect(nextOccurrence({ frequency: 'MONTHLY', startDate: '2026-01-05', endDate: null, settledThrough: '2026-03-05' }, '2026-03-10')).toBe('2026-04-05');
-    expect(nextOccurrence({ frequency: 'MONTHLY', startDate: '2026-01-05', endDate: null, settledThrough: '2026-01-05' }, '2026-03-10')).toBe('2026-02-05');
+    expect(nextOccurrence({ frequency: 'MONTHLY', startDate: '2026-01-05', endDate: null, settledThrough: '2026-01-05' }, '2026-03-10')).toBe('2026-04-05');
   });
   it('mensual día 31 se acota al fin de mes', () => {
     expect(nextOccurrence({ frequency: 'MONTHLY', startDate: '2026-01-31', endDate: null, settledThrough: '2026-01-31' }, '2026-01-31')).toBe('2026-02-28');
   });
   it('semanal y quincenal', () => {
     expect(nextOccurrence({ frequency: 'WEEKLY', startDate: '2026-03-02', endDate: null, settledThrough: '2026-03-09' }, '2026-03-10')).toBe('2026-03-16');
-    expect(nextOccurrence({ frequency: 'BIWEEKLY', startDate: '2026-03-02', endDate: null, settledThrough: null }, '2026-03-10')).toBe('2026-03-02');
+    expect(nextOccurrence({ frequency: 'BIWEEKLY', startDate: '2026-03-02', endDate: null, settledThrough: null }, '2026-03-10')).toBe('2026-03-16');
   });
   it('única: su fecha, o null si ya liquidada', () => {
     expect(nextOccurrence({ frequency: 'ONCE', startDate: '2026-05-01', endDate: null, settledThrough: null }, '2026-03-10')).toBe('2026-05-01');
