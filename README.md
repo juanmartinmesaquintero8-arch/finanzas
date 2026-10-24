@@ -50,6 +50,13 @@ Hay una versión pensada para tu celular Android. **Tus datos se guardan solo en
 - Dentro de la app, en **Ajustes**, puedes hacer una **copia de seguridad** (un archivo que puedes mandarte por WhatsApp, Drive o correo) y **recuperarla** si cambias de celular.
 - Si es tu primera vez, la app te deja mirar todo con **datos de ejemplo** y luego borrarlos.
 
-Pasos para instalarla en tu celular: _(se completarán cuando tengamos la dirección de la app)_.
+**Dirección de la app:** https://juanmartinmesaquintero8-arch.github.io/finanzas/
+
+Pasos para instalarla en tu Android:
+1. Abre **Chrome** en el celular y entra a la dirección de arriba.
+2. Toca el botón **"Instalar en mi celular"** que aparece en la app. Si no aparece, toca los **tres puntos ⋮** de Chrome (arriba a la derecha) y elige **"Instalar app"** o **"Agregar a pantalla de inicio"**.
+3. Listo: verás el ícono **"Finanzas"** en tu pantalla de inicio. Ábrela desde ahí (ya no necesitas Chrome).
+
+Cada vez que mejoremos la app, tu celular recibe la versión nueva solo, la próxima vez que la abras con internet. Tus datos no se tocan.
 
 Para probarla en el computador: `pnpm dev:mobile` y abre [http://localhost:3100](http://localhost:3100).
