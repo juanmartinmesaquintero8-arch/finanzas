@@ -1,6 +1,6 @@
 'use client';
 
-import ui from '@/components/ui.module.css';
+import { ui } from '@finanzas/ui';
 
 export default function GlobalError({ reset }: { error: Error; reset: () => void }) {
   return (

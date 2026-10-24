@@ -1,5 +1,5 @@
 import { NewAccountContainer } from '@/components/NewAccountContainer';
-import ui from '@/components/ui.module.css';
+import { ui } from '@finanzas/ui';
 
 export const metadata = { title: 'Nueva cuenta · Mis Finanzas' };
 

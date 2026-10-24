@@ -2,15 +2,8 @@
 
 import { revalidateTag } from 'next/cache';
 import { getApiClient } from '@/lib/api-client';
-import type { ActionResult } from '@/lib/action-result';
+import type { ActionResult, CreateAccountInput, CreateScheduledExpenseInput, CreateTransactionInput, TransactionPage, UpdateAccountInput } from '@finanzas/ui';
 import { createMutations } from '@/lib/mutations';
-import type {
-  CreateAccountInput,
-  CreateScheduledExpenseInput,
-  CreateTransactionInput,
-  TransactionPage,
-  UpdateAccountInput,
-} from '@/lib/types';
 
 const mutations = () => createMutations(getApiClient(), revalidateTag);
 

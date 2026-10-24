@@ -1,15 +1,4 @@
-import type {
-  Account,
-  CreateAccountInput,
-  CreateScheduledExpenseInput,
-  CreateTransactionInput,
-  Projection,
-  ScheduledExpense,
-  Summary,
-  Transaction,
-  TransactionPage,
-  UpdateAccountInput,
-} from './types';
+import type { Account, CreateAccountInput, CreateScheduledExpenseInput, CreateTransactionInput, Projection, ScheduledExpense, Summary, Transaction, TransactionPage, UpdateAccountInput } from '@finanzas/ui';
 
 /** Tags de caché de Next.js: cada lectura cacheada se etiqueta para poder invalidarla al escribir. Las Server Actions los invalidan con revalidateTag. */
 export const CACHE_TAGS = {

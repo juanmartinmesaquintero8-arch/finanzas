@@ -1,7 +1,5 @@
-import Link from 'next/link';
-import { ErrorCard } from '@/components/ErrorCard';
+import { AccountFilterChips, ErrorCard, ui } from '@finanzas/ui';
 import { HistoryContainer } from '@/components/HistoryContainer';
-import ui from '@/components/ui.module.css';
 import { getApiClient } from '@/lib/api-client';
 import { describeError } from '@/lib/server-context';
 
@@ -21,22 +19,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <h1 className={ui.pageTitle}>Historial</h1>
-      <div className={ui.chips} role="group" aria-label="Filtrar por cuenta">
-        <Link href="/historial" className={ui.chip} aria-current={cuenta ? undefined : 'true'} replace>
-          Todas
-        </Link>
-        {accounts.map((a) => (
-          <Link
-            key={a.id}
-            href={`/historial?cuenta=${a.id}`}
-            className={ui.chip}
-            aria-current={cuenta === a.id ? 'true' : undefined}
-            replace
-          >
-            {a.name}
-          </Link>
-        ))}
-      </div>
+      <AccountFilterChips accounts={accounts} selectedId={cuenta} />
       <HistoryContainer key={cuenta ?? 'todas'} initialPage={page} accounts={accounts} accountId={cuenta} />
     </>
   );

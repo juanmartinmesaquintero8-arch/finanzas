@@ -1,11 +1,6 @@
 import Link from 'next/link';
-import { AccountCards } from '@/components/AccountCards';
-import { AvailableBalanceCard } from '@/components/AvailableBalanceCard';
-import { ErrorCard } from '@/components/ErrorCard';
-import { UpcomingCommitments } from '@/components/UpcomingCommitments';
-import ui from '@/components/ui.module.css';
+import { AccountCards, AvailableBalanceCard, ErrorCard, UpcomingCommitments, ui, horizonEnd, isHorizon } from '@finanzas/ui';
 import { getApiClient } from '@/lib/api-client';
-import { horizonEnd, isHorizon } from '@/lib/domain-helpers';
 import { describeError, todayForApi } from '@/lib/server-context';
 
 export const dynamic = 'force-dynamic';

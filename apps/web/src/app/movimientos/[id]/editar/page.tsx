@@ -1,9 +1,7 @@
 import { notFound } from 'next/navigation';
 import { EditTransactionContainer } from '@/components/EditTransactionContainer';
-import { ErrorCard } from '@/components/ErrorCard';
-import ui from '@/components/ui.module.css';
+import { ErrorCard, ui, todayISO } from '@finanzas/ui';
 import { ApiError, getApiClient } from '@/lib/api-client';
-import { todayISO } from '@/lib/format';
 import { describeError } from '@/lib/server-context';
 
 export const dynamic = 'force-dynamic';

@@ -2,8 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { updateAccountAction } from '@/app/actions';
-import type { Account } from '@/lib/types';
-import { NewAccountForm } from './NewAccountForm';
+import { NewAccountForm, type Account } from '@finanzas/ui';
 
 /** Edita una cuenta reutilizando el formulario de cuenta nueva, precargado. */
 export function EditAccountContainer({ account }: { account: Account }) {

@@ -10,7 +10,9 @@
     "db:seed": "pnpm --filter @finanzas/api exec node prisma/seed.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:api": "pnpm --filter @finanzas/api start:dev",
-    "dev:web": "pnpm --filter @finanzas/web dev"
+    "dev:web": "pnpm --filter @finanzas/web dev",
+    "dev:mobile": "pnpm --filter @finanzas/mobile dev",
+    "build:mobile": "pnpm --filter @finanzas/domain build && pnpm --filter @finanzas/mobile build"
   },
   "devDependencies": {
     "embedded-postgres": "18.4.0-beta.17",
