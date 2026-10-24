@@ -1,4 +1,4 @@
-﻿import { CreateAccountUseCase } from '../accounts/create-account.use-case';
+import { CreateAccountUseCase } from '../accounts/create-account.use-case';
 import { CACHE_KEYS } from '../cache-keys';
 import { InvalidRequestError } from '../errors';
 import { EventBus } from '../events/event-bus';
