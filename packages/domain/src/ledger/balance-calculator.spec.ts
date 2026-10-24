@@ -1,4 +1,4 @@
-﻿import { Account } from '../account/account';
+import { Account } from '../account/account';
 import { Money } from '../money/money';
 import { TransactionFactory } from '../transaction/transaction.factory';
 import { BalanceCalculator, UnknownAccountError } from './balance-calculator';
