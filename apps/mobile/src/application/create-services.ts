@@ -4,7 +4,9 @@ import { IdbLedgerStore } from '@/data/idb-ledger-store';
 import { IdbScheduledExpenseRepository } from '@/data/idb-scheduled-expense.repository';
 import { IdbTransactionRepository } from '@/data/idb-transaction.repository';
 import { AccountService } from './account-service';
+import { BackupService } from './backup-service';
 import { ChangeBus } from './change-bus';
+import { DataService } from './data-service';
 import { ScheduledService } from './scheduled-service';
 import { SummaryService } from './summary-service';
 import type { ServiceContext } from './support';
@@ -21,6 +23,8 @@ export interface AppServices {
   transactions: TransactionService;
   scheduled: ScheduledService;
   summary: SummaryService;
+  backup: BackupService;
+  data: DataService;
   bus: ChangeBus;
 }
 
@@ -41,6 +45,8 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     transactions: new TransactionService(ctx),
     scheduled: new ScheduledService(ctx),
     summary: new SummaryService(ctx),
+    backup: new BackupService(ctx),
+    data: new DataService(ctx),
     bus,
   };
 }
