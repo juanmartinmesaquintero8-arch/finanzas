@@ -5,6 +5,7 @@ import type {
   CreateScheduledExpenseInput,
   CreateTransactionInput,
   TransactionPage,
+  UpdateAccountInput,
 } from './types';
 
 type Revalidate = (tag: string) => void;
@@ -30,6 +31,12 @@ export function createMutations(client: ApiClient, revalidate: Revalidate) {
   return {
     createTransaction: (input: CreateTransactionInput) =>
       run(() => client.createTransaction(input), [transactions, summary, projection]),
+    updateTransaction: (id: string, input: CreateTransactionInput) =>
+      run(() => client.updateTransaction(id, input), [transactions, summary, projection]),
+    updateAccount: (id: string, input: UpdateAccountInput) =>
+      run(() => client.updateAccount(id, input), [accounts, summary, projection]),
+    updateScheduledExpense: (id: string, input: CreateScheduledExpenseInput) =>
+      run(() => client.updateScheduledExpense(id, input), [scheduled, projection]),
     deleteTransaction: (id: string) => run(() => client.deleteTransaction(id), [transactions, summary, projection]),
     createAccount: (input: CreateAccountInput) => run(() => client.createAccount(input), [accounts, summary, projection]),
     createScheduledExpense: (input: CreateScheduledExpenseInput) =>

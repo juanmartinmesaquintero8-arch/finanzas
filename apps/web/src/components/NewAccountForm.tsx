@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import type { ActionResult } from '@/lib/action-result';
 import { formatGroupedDigits } from '@/lib/format';
-import type { AccountType, CreateAccountInput } from '@/lib/types';
+import type { Account, AccountType, CreateAccountInput } from '@/lib/types';
 import { ChipGroup } from './ChipGroup';
 import styles from './Form.module.css';
 import ui from './ui.module.css';
@@ -19,12 +19,16 @@ const TYPES: { value: AccountType; label: string }[] = [
 interface Props {
   onSubmit: (input: CreateAccountInput) => Promise<ActionResult>;
   onDone?: () => void;
+  /** Si se pasa, el formulario edita esta cuenta (precargado) en vez de crear una nueva. */
+  account?: Account;
+  onCancel?: () => void;
 }
 
-export function NewAccountForm({ onSubmit, onDone }: Props) {
-  const [name, setName] = useState('');
-  const [type, setType] = useState<AccountType>('CASH');
-  const [balanceText, setBalanceText] = useState('');
+export function NewAccountForm({ onSubmit, onDone, account, onCancel }: Props) {
+  const editing = !!account;
+  const [name, setName] = useState(account?.name ?? '');
+  const [type, setType] = useState<AccountType>(account?.type ?? 'CASH');
+  const [balanceText, setBalanceText] = useState(account ? formatGroupedDigits(account.initialBalance.amount) : '');
   const [nameError, setNameError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -47,7 +51,7 @@ export function NewAccountForm({ onSubmit, onDone }: Props) {
       if (res.ok) onDone?.();
       else setServerError(res.error);
     } catch {
-      setServerError('No pudimos crear la cuenta. Intenta de nuevo.');
+      setServerError(editing ? 'No pudimos guardar la cuenta. Intenta de nuevo.' : 'No pudimos crear la cuenta. Intenta de nuevo.');
     } finally {
       setPending(false);
     }
@@ -79,7 +83,7 @@ export function NewAccountForm({ onSubmit, onDone }: Props) {
       <ChipGroup label="Tipo de cuenta" options={TYPES} value={type} onChange={setType} />
       <div className={ui.field}>
         <label className={ui.label} htmlFor="account-balance">
-          Saldo actual
+          {editing ? 'Saldo inicial (con el que empezó la cuenta)' : 'Saldo actual'}
         </label>
         <input
           id="account-balance"
@@ -97,8 +101,13 @@ export function NewAccountForm({ onSubmit, onDone }: Props) {
         </p>
       )}
       <button type="submit" className={ui.button} disabled={pending}>
-        {pending ? 'Creando…' : 'Crear cuenta'}
+        {pending ? (editing ? 'Guardando…' : 'Creando…') : editing ? 'Guardar cambios' : 'Crear cuenta'}
       </button>
+      {onCancel && (
+        <button type="button" className={ui.buttonGhost} onClick={onCancel}>
+          Cancelar
+        </button>
+      )}
     </form>
   );
 }
