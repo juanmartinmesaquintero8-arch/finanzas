@@ -2,16 +2,20 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { groupTransactionsByDay, transactionTitle } from '@/lib/domain-helpers';
-import { formatDayHeading, formatMoneyView } from '@/lib/format';
-import type { Account, Transaction } from '@/lib/types';
+import { groupTransactionsByDay, transactionTitle } from '../lib/domain-helpers';
+import { formatDayHeading, formatMoneyView } from '../lib/format';
+import type { Account, Transaction } from '../lib/types';
 import styles from './HistoryList.module.css';
 import ui from './ui.module.css';
+
+const defaultEditHref = (id: string) => `/movimientos/${id}/editar`;
 
 interface Props {
   items: Transaction[];
   accounts: Account[];
   onDelete: (id: string) => Promise<void>;
+  /** Enlace de edición por movimiento (cada app define sus rutas). */
+  editHref?: (id: string) => string;
   /** Sólo para pruebas: fija "hoy". */
   now?: Date;
 }
@@ -20,7 +24,7 @@ const SIGN = { INCOME: '+', EXPENSE: '-', TRANSFER: '' } as const;
 const ICON = { INCOME: '+', EXPENSE: '−', TRANSFER: '⇄' } as const;
 const TYPE_LABEL = { INCOME: 'Ingreso', EXPENSE: 'Gasto', TRANSFER: 'Transferencia' } as const;
 
-export function HistoryList({ items, accounts, onDelete, now }: Props) {
+export function HistoryList({ items, accounts, onDelete, now, editHref = defaultEditHref }: Props) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +60,7 @@ export function HistoryList({ items, accounts, onDelete, now }: Props) {
           <ul className={`${ui.card} ${styles.list}`}>
             {group.items.map((t) => (
               <li key={t.id} className={styles.row}>
-                <Link href={`/movimientos/${t.id}/editar`} className={styles.link} aria-label={`Editar ${t.description}`}>
+                <Link href={editHref(t.id)} className={styles.link} aria-label={`Editar ${t.description}`}>
                 <span className={`${styles.icon} ${styles[t.type]}`} role="img" aria-label={TYPE_LABEL[t.type]}>
                   {ICON[t.type]}
                 </span>

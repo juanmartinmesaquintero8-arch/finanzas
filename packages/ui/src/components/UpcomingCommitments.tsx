@@ -1,5 +1,5 @@
-import { formatMoneyView, formatShortDate } from '@/lib/format';
-import type { Projection } from '@/lib/types';
+import { formatMoneyView, formatShortDate } from '../lib/format';
+import type { Projection } from '../lib/types';
 import styles from './UpcomingCommitments.module.css';
 import ui from './ui.module.css';
 

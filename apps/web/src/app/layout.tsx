@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
-import { BottomNav } from '@/components/BottomNav';
-import './globals.css';
+import { AppBottomNav } from '@/components/AppBottomNav';
+import '@finanzas/ui/src/globals.css';
 import styles from './layout.module.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="es" className={inter.variable}>
       <body>
         <main className={styles.main}>{children}</main>
-        <BottomNav />
+        <AppBottomNav />
       </body>
     </html>
   );

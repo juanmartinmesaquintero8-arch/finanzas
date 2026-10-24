@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { Account, TransactionPage } from '@/lib/types';
+import type { Account, TransactionPage } from '../lib/types';
 import { HistoryList } from './HistoryList';
 import ui from './ui.module.css';
 

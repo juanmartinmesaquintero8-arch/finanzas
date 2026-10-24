@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import { EditAccountContainer } from '@/components/EditAccountContainer';
-import { ErrorCard } from '@/components/ErrorCard';
-import ui from '@/components/ui.module.css';
+import { ErrorCard, ui } from '@finanzas/ui';
 import { getApiClient } from '@/lib/api-client';
 import { describeError } from '@/lib/server-context';
 

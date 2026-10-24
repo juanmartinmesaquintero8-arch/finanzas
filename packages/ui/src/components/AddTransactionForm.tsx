@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { formatGroupedDigits } from '@/lib/format';
-import type { ActionResult } from '@/lib/action-result';
-import type { Account, CreateTransactionInput, Transaction, TransactionType } from '@/lib/types';
-import { validateTransactionForm, type FieldErrors } from '@/lib/validation';
+import { formatGroupedDigits } from '../lib/format';
+import type { ActionResult } from '../lib/action-result';
+import type { Account, CreateTransactionInput, Transaction, TransactionType } from '../lib/types';
+import { validateTransactionForm, type FieldErrors } from '../lib/validation';
 import { ChipGroup } from './ChipGroup';
 import { TransactionTypeChips } from './TransactionTypeChips';
 import styles from './Form.module.css';

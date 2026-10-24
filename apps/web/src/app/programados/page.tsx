@@ -1,8 +1,6 @@
-import { ErrorCard } from '@/components/ErrorCard';
+import { ErrorCard, ui, todayISO } from '@finanzas/ui';
 import { ScheduledContainer } from '@/components/ScheduledContainer';
-import ui from '@/components/ui.module.css';
 import { getApiClient } from '@/lib/api-client';
-import { todayISO } from '@/lib/format';
 import { describeError } from '@/lib/server-context';
 
 export const dynamic = 'force-dynamic';

@@ -5,7 +5,7 @@ import { AccountCards } from './AccountCards';
 import { NewAccountForm } from './NewAccountForm';
 import { ScheduledList } from './ScheduledList';
 import { ScheduledForm } from './ScheduledForm';
-import type { Account, ScheduledExpense } from '@/lib/types';
+import type { Account, ScheduledExpense } from '../lib/types';
 
 const cop = (amount: string) => ({ amount, currency: 'COP' });
 const accounts: Account[] = [
