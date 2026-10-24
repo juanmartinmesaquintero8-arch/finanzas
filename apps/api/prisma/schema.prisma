@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CASH
+  BANK
+  DIGITAL
+  SAVINGS
+  CREDIT
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum Frequency {
+  ONCE
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+model Account {
+  id             String      @id @default(uuid()) @db.Uuid
+  name           String      @db.VarChar(80)
+  type           AccountType
+  currency       String      @db.Char(3)
+  /// Unidades mínimas enteras (CLAUDE.md §3)
+  initialBalance BigInt      @map("initial_balance")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  transactions      Transaction[]      @relation("AccountTransactions")
+  outgoingTransfers Transaction[]      @relation("TransferFrom")
+  incomingTransfers Transaction[]      @relation("TransferTo")
+  scheduledExpenses ScheduledExpense[]
+
+  @@map("accounts")
+}
+
+/// Ledger. INCOME/EXPENSE usan account_id; TRANSFER usa from_account_id + to_account_id.
+model Transaction {
+  id            String          @id @default(uuid()) @db.Uuid
+  type          TransactionType
+  amount        BigInt
+  currency      String          @db.Char(3)
+  date          DateTime        @db.Timestamptz(3)
+  description   String          @db.VarChar(160)
+  category      String?         @db.VarChar(60)
+  accountId     String?         @map("account_id") @db.Uuid
+  fromAccountId String?         @map("from_account_id") @db.Uuid
+  toAccountId   String?         @map("to_account_id") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  account     Account? @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Restrict)
+  fromAccount Account? @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccount   Account? @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, date])
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([date(sort: Desc), id])
+  @@map("transactions")
+}
+
+model ScheduledExpense {
+  id             String    @id @default(uuid()) @db.Uuid
+  description    String    @db.VarChar(160)
+  amount         BigInt
+  currency       String    @db.Char(3)
+  accountId      String    @map("account_id") @db.Uuid
+  frequency      Frequency
+  startDate      DateTime  @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  settledThrough DateTime? @map("settled_through") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("scheduled_expenses")
+}

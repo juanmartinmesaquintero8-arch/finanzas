@@ -1,0 +1,62 @@
+{
+  "name": "@finanzas/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "test": "jest --runInBand",
+    "test:unit": "jest --selectProjects unit",
+    "test:int": "jest --selectProjects integration --runInBand",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:generate": "prisma generate"
+  },
+  "jest": {
+    "projects": [
+      {
+        "displayName": "unit",
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "rootDir": ".",
+        "testMatch": [
+          "<rootDir>/src/**/*.spec.ts"
+        ]
+      },
+      {
+        "displayName": "integration",
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "rootDir": ".",
+        "testMatch": [
+          "<rootDir>/test/**/*.int-spec.ts"
+        ],
+        "globalSetup": "<rootDir>/test/global-setup.ts"
+      }
+    ]
+  },
+  "dependencies": {
+    "@finanzas/domain": "workspace:^",
+    "@nestjs/common": "11",
+    "@nestjs/core": "11",
+    "@nestjs/platform-express": "11",
+    "@prisma/client": "6",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "11",
+    "@types/jest": "29",
+    "@types/node": "22",
+    "@types/supertest": "^7.2.1",
+    "jest": "29",
+    "prisma": "6",
+    "supertest": "^7.3.1",
+    "ts-jest": "29",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "5.7.3"
+  }
+}
