@@ -32,6 +32,19 @@ describe('Base de datos (integración)', () => {
     expectIndex('scheduled_expenses', 'account_id');
   });
 
+  it('usa codificación UTF8 (tildes y emojis)', async () => {
+    const [row] = await prisma.$queryRaw<{ encoding: string }[]>`
+      SELECT pg_encoding_to_char(encoding) AS encoding FROM pg_database WHERE datname = current_database()`;
+    expect(row.encoding).toBe('UTF8');
+
+    const account = await prisma.account.create({
+      data: { name: 'Nómina 💰', type: 'CASH', currency: 'COP', initialBalance: 0n },
+    });
+    const stored = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
+    expect(stored.name).toBe('Nómina 💰');
+    await prisma.account.delete({ where: { id: account.id } });
+  });
+
   it('impide montos no positivos a nivel de BD (CHECK)', async () => {
     const account = await prisma.account.create({
       data: { name: 'Check', type: 'CASH', currency: 'COP', initialBalance: 0n },
