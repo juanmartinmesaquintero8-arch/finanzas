@@ -1,4 +1,4 @@
-import { CreateAccountUseCase } from '../accounts/create-account.use-case';
+﻿import { CreateAccountUseCase } from '../accounts/create-account.use-case';
 import { CACHE_KEYS } from '../cache-keys';
 import { InvalidRequestError } from '../errors';
 import { EventBus } from '../events/event-bus';
@@ -27,6 +27,7 @@ async function setup() {
 
   return {
     repos,
+    bus,
     cache,
     cash,
     bank,
@@ -77,10 +78,8 @@ describe('GetSummaryUseCase', () => {
   });
 
   it('INVALIDACIÓN: crear una cuenta nueva invalida el resumen', async () => {
-    const { summary, repos } = await setup();
+    const { summary, repos, bus } = await setup();
     await summary.execute();
-    const bus = new EventBus();
-    new InvalidateCachesOnLedgerChange(bus, (summary as unknown as { cache: InMemoryCache }).cache).onModuleInit();
     await new CreateAccountUseCase(repos.accounts, bus).execute({ name: 'Ahorros', type: 'SAVINGS', initialBalance: '5' });
     expect((await summary.execute()).accounts).toHaveLength(4);
   });
