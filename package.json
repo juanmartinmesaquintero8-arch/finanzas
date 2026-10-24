@@ -1,14 +1,13 @@
-{
+﻿{
   "name": "finanzas",
   "private": true,
   "packageManager": "pnpm@9.15.4",
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
     "build": "pnpm -r build",
     "db:start": "node scripts/db.mjs",
+    "db:seed": "pnpm --filter @finanzas/api exec node prisma/seed.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:api": "pnpm --filter @finanzas/api start:dev",
     "dev:web": "pnpm --filter @finanzas/web dev"
