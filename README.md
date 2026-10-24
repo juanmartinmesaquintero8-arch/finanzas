@@ -2,7 +2,14 @@
 
 Una aplicación para controlar tu dinero: tus cuentas (Efectivo, Bancolombia, Nu…), tus ingresos y gastos, y lo que te toca pagar más adelante.
 
-## Cómo abrirla (4 pasos)
+## La forma fácil: doble clic
+
+En tu escritorio haz **doble clic en "Abrir Mis Finanzas"**. Se encienden solas la base de datos y la app, y se abre tu navegador (tarda unos 15 segundos).
+
+Para apagarla, cierra las dos ventanas llamadas **"Finanzas"** de la barra de tareas.
+(Si el acceso directo se borra, el mismo botón está en esta carpeta: `Abrir Finanzas.cmd`.)
+
+## La forma manual (4 pasos)
 
 **1. Abre una terminal en esta carpeta.**
 En el Explorador de archivos entra a `C:\Users\juanm\dev\finanzas`, haz clic en la barra de direcciones, escribe `powershell` y presiona Enter.
