@@ -11,6 +11,7 @@ import { ScheduledService } from './scheduled-service';
 import { SummaryService } from './summary-service';
 import type { ServiceContext } from './support';
 import { TransactionService } from './transaction-service';
+import { todayISO } from '@finanzas/ui';
 
 export interface CreateServicesOptions {
   db: FinanzasDb;
@@ -26,6 +27,8 @@ export interface AppServices {
   backup: BackupService;
   data: DataService;
   bus: ChangeBus;
+  /** Día de hoy (YYYY-MM-DD, hora de Colombia) según el reloj de la app. */
+  today: () => string;
 }
 
 /** Raíz de composición: conecta los adaptadores IndexedDB con los casos de uso. */
@@ -48,5 +51,6 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     backup: new BackupService(ctx),
     data: new DataService(ctx),
     bus,
+    today: () => todayISO(now()),
   };
 }

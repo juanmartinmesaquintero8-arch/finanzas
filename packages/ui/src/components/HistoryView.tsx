@@ -11,10 +11,12 @@ interface Props {
   accountId?: string;
   loadPage: (params: { accountId?: string; cursor: string }) => Promise<TransactionPage>;
   onDelete: (id: string) => Promise<void>;
+  /** Enlace de edición por movimiento (cada app define sus rutas). */
+  editHref?: (id: string) => string;
 }
 
 /** Historial con paginación por cursor (keyset): "Cargar más" pide siempre `nextCursor`. */
-export function HistoryView({ initialPage, accounts, accountId, loadPage, onDelete }: Props) {
+export function HistoryView({ initialPage, accounts, accountId, loadPage, onDelete, editHref }: Props) {
   const [items, setItems] = useState(initialPage.items);
   const [nextCursor, setNextCursor] = useState(initialPage.nextCursor);
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,7 @@ export function HistoryView({ initialPage, accounts, accountId, loadPage, onDele
 
   return (
     <div className={ui.stack}>
-      <HistoryList items={items} accounts={accounts} onDelete={remove} />
+      <HistoryList items={items} accounts={accounts} onDelete={remove} editHref={editHref} />
       {error && (
         <p role="alert" className={ui.alert}>
           {error}
