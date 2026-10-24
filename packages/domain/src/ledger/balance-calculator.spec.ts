@@ -1,4 +1,4 @@
-import { Account } from '../account/account';
+﻿import { Account } from '../account/account';
 import { Money } from '../money/money';
 import { TransactionFactory } from '../transaction/transaction.factory';
 import { BalanceCalculator, UnknownAccountError } from './balance-calculator';
@@ -54,5 +54,27 @@ describe('BalanceCalculator', () => {
 
   it('balanceOf de una cuenta desconocida falla', () => {
     expect(() => calc.calculate(accounts, []).balanceOf('ghost')).toThrow(UnknownAccountError);
+  });
+
+  describe('fromTotals (totales agregados por SQL)', () => {
+    it('produce el mismo snapshot que calculate() a partir de deltas por cuenta', () => {
+      const deltas = new Map<string, bigint>([
+        ['cash', -40_000n],
+        ['bancolombia', 2_000_000n],
+        ['nu', 850_000n],
+      ]);
+      const result = calc.fromTotals(accounts, deltas);
+      expect(result).toEqual(calc.calculate(accounts, txs));
+    });
+
+    it('trata las cuentas sin movimientos como delta cero', () => {
+      const result = calc.fromTotals(accounts, new Map());
+      expect(result.balanceOf('bancolombia')).toEqual(cop(2_000_000));
+      expect(result.netWorth).toEqual(cop(2_100_000));
+    });
+
+    it('falla si hay totales de una cuenta inexistente', () => {
+      expect(() => calc.fromTotals(accounts, new Map([['ghost', 1n]]))).toThrow(UnknownAccountError);
+    });
   });
 });
