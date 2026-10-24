@@ -1,4 +1,4 @@
-import { Account } from '../account/account';
+﻿import { Account } from '../account/account';
 import { Money } from '../money/money';
 import { Transaction } from '../transaction/transaction';
 
@@ -46,5 +46,21 @@ export class BalanceCalculator {
     const balances = accounts.map((a) => ({ accountId: a.id, balance: running.get(a.id)! }));
     const netWorth = Money.sum(balances.map((b) => b.balance), this.currency);
     return new BalanceSnapshot(balances, netWorth);
+  }
+
+  /**
+   * Construye el snapshot desde totales ya agregados (p. ej. SUM ... GROUP BY en SQL),
+   * evitando cargar todo el ledger en memoria. deltas = variación neta por cuenta.
+   */
+  fromTotals(accounts: readonly Account[], deltas: ReadonlyMap<string, bigint>): BalanceSnapshot {
+    const known = new Set(accounts.map((a) => a.id));
+    for (const accountId of deltas.keys()) {
+      if (!known.has(accountId)) throw new UnknownAccountError(accountId);
+    }
+    const balances = accounts.map((a) => ({
+      accountId: a.id,
+      balance: a.initialBalance.add(Money.of(deltas.get(a.id) ?? 0n, a.currency)),
+    }));
+    return new BalanceSnapshot(balances, Money.sum(balances.map((b) => b.balance), this.currency));
   }
 }
