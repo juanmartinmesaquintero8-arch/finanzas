@@ -54,6 +54,7 @@ export interface ScheduledFormValues {
   accountId: string;
   frequency: Frequency;
   startDate: string;
+  endDate?: string;
 }
 
 export function validateScheduledForm(v: ScheduledFormValues): ValidationResult<CreateScheduledExpenseInput> {
@@ -63,15 +64,17 @@ export function validateScheduledForm(v: ScheduledFormValues): ValidationResult<
   if (!amount) errors.amount = 'Escribe un monto mayor a cero.';
   if (!v.accountId) errors.account = 'Elige de qué cuenta se paga.';
   if (!v.startDate) errors.startDate = 'Elige la fecha del primer pago.';
+  if (v.endDate && v.startDate && v.endDate < v.startDate) {
+    errors.endDate = 'El último pago no puede ser antes del primero.';
+  }
   if (Object.keys(errors).length > 0 || !amount) return { ok: false, errors };
-  return {
-    ok: true,
-    value: {
-      description: v.description.trim(),
-      amount,
-      accountId: v.accountId,
-      frequency: v.frequency,
-      startDate: v.startDate,
-    },
+  const value: CreateScheduledExpenseInput = {
+    description: v.description.trim(),
+    amount,
+    accountId: v.accountId,
+    frequency: v.frequency,
+    startDate: v.startDate,
   };
+  if (v.endDate) value.endDate = v.endDate;
+  return { ok: true, value };
 }

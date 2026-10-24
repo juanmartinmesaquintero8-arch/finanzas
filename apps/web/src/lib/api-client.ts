@@ -8,6 +8,7 @@ import type {
   Summary,
   Transaction,
   TransactionPage,
+  UpdateAccountInput,
 } from './types';
 
 /** Tags de caché de Next.js (CLAUDE.md §7.3). Las Server Actions los invalidan con revalidateTag. */
@@ -90,6 +91,8 @@ export function createApiClient({ baseUrl, fetch: fetchImpl = fetch }: ApiClient
     getProjection: (to: string) => read<Projection>(`/projection?to=${encodeURIComponent(to)}`, CACHE_TAGS.projection),
     listAccounts: () => read<Account[]>('/accounts', CACHE_TAGS.accounts),
     createAccount: (input: CreateAccountInput) => write<Account>('POST', '/accounts', input),
+    updateAccount: (id: string, input: UpdateAccountInput) =>
+      write<Account>('PATCH', `/accounts/${encodeURIComponent(id)}`, input),
 
     listTransactions: (query: { accountId?: string; limit?: number; cursor?: string } = {}) => {
       const params = new URLSearchParams();
@@ -99,12 +102,17 @@ export function createApiClient({ baseUrl, fetch: fetchImpl = fetch }: ApiClient
       const qs = params.toString();
       return read<TransactionPage>(`/transactions${qs ? `?${qs}` : ''}`, CACHE_TAGS.transactions);
     },
+    getTransaction: (id: string) => read<Transaction>(`/transactions/${encodeURIComponent(id)}`, CACHE_TAGS.transactions),
     createTransaction: (input: CreateTransactionInput) => write<Transaction>('POST', '/transactions', input),
+    updateTransaction: (id: string, input: CreateTransactionInput) =>
+      write<Transaction>('PUT', `/transactions/${encodeURIComponent(id)}`, input),
     deleteTransaction: (id: string) => write<void>('DELETE', `/transactions/${encodeURIComponent(id)}`),
 
     listScheduledExpenses: () => read<ScheduledExpense[]>('/scheduled-expenses', CACHE_TAGS.scheduled),
     createScheduledExpense: (input: CreateScheduledExpenseInput) =>
       write<ScheduledExpense>('POST', '/scheduled-expenses', input),
+    updateScheduledExpense: (id: string, input: CreateScheduledExpenseInput) =>
+      write<ScheduledExpense>('PUT', `/scheduled-expenses/${encodeURIComponent(id)}`, input),
     deleteScheduledExpense: (id: string) => write<void>('DELETE', `/scheduled-expenses/${encodeURIComponent(id)}`),
     settleScheduledExpense: (id: string, through: string) =>
       write<ScheduledExpense>('POST', `/scheduled-expenses/${encodeURIComponent(id)}/settle`, {

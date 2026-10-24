@@ -46,3 +46,16 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+
+.edit {
+  align-self: flex-start;
+  margin-top: 6px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-decoration: none;
+}

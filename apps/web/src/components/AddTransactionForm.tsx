@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { formatGroupedDigits } from '@/lib/format';
 import type { ActionResult } from '@/lib/action-result';
-import type { Account, CreateTransactionInput, TransactionType } from '@/lib/types';
+import type { Account, CreateTransactionInput, Transaction, TransactionType } from '@/lib/types';
 import { validateTransactionForm, type FieldErrors } from '@/lib/validation';
 import { ChipGroup } from './ChipGroup';
 import { TransactionTypeChips } from './TransactionTypeChips';
@@ -15,6 +15,9 @@ interface Props {
   today: string;
   onSubmit: (input: CreateTransactionInput) => Promise<ActionResult>;
   onDone?: () => void;
+  /** Si se pasa, el formulario edita este movimiento (precargado) en vez de crear uno nuevo. */
+  transaction?: Transaction;
+  onCancel?: () => void;
 }
 
 const CATEGORIES: Record<TransactionType, string[]> = {
@@ -23,15 +26,17 @@ const CATEGORIES: Record<TransactionType, string[]> = {
   TRANSFER: [],
 };
 
-export function AddTransactionForm({ accounts, today, onSubmit, onDone }: Props) {
-  const [type, setType] = useState<TransactionType>('EXPENSE');
-  const [amountText, setAmountText] = useState('');
-  const [date, setDate] = useState(today);
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [fromAccountId, setFromAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
+export function AddTransactionForm({ accounts, today, onSubmit, onDone, transaction, onCancel }: Props) {
+  const editing = !!transaction;
+  const initialDay = transaction ? transaction.date.slice(0, 10) : today;
+  const [type, setType] = useState<TransactionType>(transaction?.type ?? 'EXPENSE');
+  const [amountText, setAmountText] = useState(transaction ? formatGroupedDigits(transaction.amount.amount) : '');
+  const [date, setDate] = useState(initialDay);
+  const [description, setDescription] = useState(transaction?.description ?? '');
+  const [category, setCategory] = useState(transaction?.category ?? '');
+  const [accountId, setAccountId] = useState(transaction?.accountId ?? '');
+  const [fromAccountId, setFromAccountId] = useState(transaction?.fromAccountId ?? '');
+  const [toAccountId, setToAccountId] = useState(transaction?.toAccountId ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -49,7 +54,9 @@ export function AddTransactionForm({ accounts, today, onSubmit, onDone }: Props)
     setErrors({});
     setPending(true);
     try {
-      const response = await onSubmit(result.value);
+      // Si no tocó la fecha, se conserva la hora original para no alterar el orden dentro del día.
+      const value = transaction && date === initialDay ? { ...result.value, date: transaction.date } : result.value;
+      const response = await onSubmit(value);
       if (response.ok) onDone?.();
       else setServerError(response.error);
     } catch {
@@ -172,8 +179,13 @@ export function AddTransactionForm({ accounts, today, onSubmit, onDone }: Props)
       )}
 
       <button type="submit" className={ui.button} disabled={pending}>
-        {pending ? 'Guardando…' : 'Guardar'}
+        {pending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar'}
       </button>
+      {onCancel && (
+        <button type="button" className={ui.buttonGhost} onClick={onCancel}>
+          Cancelar
+        </button>
+      )}
     </form>
   );
 }

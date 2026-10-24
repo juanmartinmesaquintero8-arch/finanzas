@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { groupTransactionsByDay, transactionTitle } from '@/lib/domain-helpers';
 import { formatDayHeading, formatMoneyView } from '@/lib/format';
@@ -55,6 +56,7 @@ export function HistoryList({ items, accounts, onDelete, now }: Props) {
           <ul className={`${ui.card} ${styles.list}`}>
             {group.items.map((t) => (
               <li key={t.id} className={styles.row}>
+                <Link href={`/movimientos/${t.id}/editar`} className={styles.link} aria-label={`Editar ${t.description}`}>
                 <span className={`${styles.icon} ${styles[t.type]}`} role="img" aria-label={TYPE_LABEL[t.type]}>
                   {ICON[t.type]}
                 </span>
@@ -69,6 +71,7 @@ export function HistoryList({ items, accounts, onDelete, now }: Props) {
                   {SIGN[t.type]}
                   {formatMoneyView(t.amount)}
                 </span>
+                </Link>
                 {confirming === t.id ? (
                   <div className={styles.confirm}>
                     <p>¿Eliminar este movimiento?</p>
