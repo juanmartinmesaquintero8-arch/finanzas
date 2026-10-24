@@ -1,0 +1,79 @@
+.hero {
+  background: var(--primary);
+  color: var(--primary-contrast);
+  border-radius: 24px;
+  padding: 20px 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.short {
+  background: #7a1d17;
+  color: #fff;
+}
+
+.title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  opacity: 0.95;
+}
+
+.amount {
+  font-size: clamp(2rem, 9vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.alert {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+}
+
+.stats div {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.stats dt {
+  font-size: 0.8rem;
+  opacity: 0.95;
+}
+
+.stats dd {
+  margin: 2px 0 0;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero .horizonChip {
+  background: transparent;
+  color: inherit;
+  border-color: rgba(255, 255, 255, 0.6);
+  min-height: 44px;
+}
+
+.hero .horizonChip[aria-current='true'] {
+  background: var(--primary-contrast);
+  color: var(--primary);
+  border-color: var(--primary-contrast);
+}
+
+.hero.short .horizonChip[aria-current='true'] {
+  color: #7a1d17;
+}
+
