@@ -16,6 +16,7 @@ export { AvailableBalanceCard } from './components/AvailableBalanceCard';
 export { BottomNav, DEFAULT_TABS, NAV_ICONS, type NavTab } from './components/BottomNav';
 export { ChipGroup, type ChipOption } from './components/ChipGroup';
 export { ErrorCard } from './components/ErrorCard';
+export { PageContainer } from './components/PageContainer';
 export { HistoryList } from './components/HistoryList';
 export { HistoryView } from './components/HistoryView';
 export { NewAccountForm } from './components/NewAccountForm';
