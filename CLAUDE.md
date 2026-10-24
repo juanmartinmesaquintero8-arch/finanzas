@@ -78,7 +78,7 @@ Para **cada módulo**:
 1. Analizar la arquitectura y el impacto.
 2. Delegar la lógica al agente especializado apropiado (`typescript-pro`, `nextjs-expert`, `database-expert`, `test-generator`, …) o implementarla directamente.
 3. Escribir/verificar las pruebas (TDD).
-4. **Auditoría**: ejecutar los tests en consola y revisar el código.
+4. **Auditoría**: ejecutar los tests en consola, revisar el código y verificar las reglas de rendimiento y caché (sección 7).
 5. Refactorizar si es necesario. Solo entonces dar la tarea por terminada.
 
 ## 6. Reglas de Git (ESTRICTAS)
@@ -88,7 +88,53 @@ Para **cada módulo**:
 - Commits pequeños con Conventional Commits (`feat:`, `test:`, `refactor:`, `chore:`, `fix:`).
 - Solo se integra a `main` (`git merge --no-ff`) con **todos los tests en verde**.
 
-## 7. Notas de entorno (Windows)
+## 7. Performance, rendimiento y caché (OBLIGATORIO)
+
+Principio: **medir antes de optimizar**, pero diseñar desde el inicio para que el ledger escale.
+Toda optimización llega con un test (o benchmark) que la respalde.
+
+### 7.1 Presupuestos (SLO)
+| Métrica | Objetivo |
+|---|---|
+| API `GET /summary` / proyección (p95) | < 150 ms |
+| API listados paginados (p95) | < 100 ms |
+| Web móvil (Lighthouse, 4G lenta) | Performance ≥ 90 · LCP < 2,5 s · INP < 200 ms · CLS < 0,1 |
+| JS inicial por ruta | < 150 kB gzip |
+| Motor de proyecciones (dominio) | 1 000 gastos programados × 12 meses < 50 ms (`vitest bench`) |
+
+### 7.2 Base de datos
+- **Saldos por agregación SQL** (`SUM … GROUP BY account`) en el repositorio, nunca cargando todo el ledger en memoria; el dominio recibe los totales.
+- **Índices obligatorios**: `transactions(account_id, date)`, `transactions(from_account_id)`, `transactions(to_account_id)`, `transactions(date DESC, id)`, `scheduled_expenses(account_id)`.
+- **Historial con paginación por cursor (keyset)** sobre `(date, id)`; prohibido `OFFSET` en listados que crecen.
+- Evitar N+1: `select`/`include` explícitos en Prisma; nunca consultas dentro de bucles.
+- Escrituras que tocan varias filas (ej. transferencia, liquidar gasto programado) dentro de **una transacción de BD**.
+- Revisar con `EXPLAIN ANALYZE` toda consulta nueva de agregación. Si el ledger supera ~100 k filas por usuario: snapshots mensuales de saldo (tabla materializada) + delta desde el último snapshot.
+- Pool de conexiones configurado vía `DATABASE_URL` (`connection_limit`).
+
+### 7.3 Caché
+- **Puerto `CachePort`** en la capa de aplicación (DIP). Implementación en memoria (LRU) en desarrollo; Redis en producción, sin tocar casos de uso.
+- Cachear lecturas costosas: resumen (patrimonio + saldos por cuenta) y proyecciones por `(from, to)`.
+- **Invalidación por eventos** (patrón Observer / domain events): crear/editar/borrar transacciones, cuentas o gastos programados invalida las claves afectadas. TTL corto (≤ 60 s) solo como red de seguridad, nunca como mecanismo principal.
+- Claves versionadas y con namespace: `summary:v1:<userId>`, `projection:v1:<userId>:<from>:<to>`.
+- HTTP: los datos financieros son privados → `Cache-Control: private, no-cache` + **ETag** para revalidación (304). Nunca caché compartida/CDN para datos de usuario.
+- Web (Next.js): Server Components con `fetch` etiquetado (`next: { tags }`) y `revalidateTag` tras cada mutación; estáticos con caché inmutable (hash en el nombre).
+- Toda caché debe tener test de **invalidación** (que un dato nuevo se vea tras escribir).
+
+### 7.4 Frontend
+- Mobile-first: CSS Modules sin librerías de UI pesadas; `next/font` y `next/image`.
+- Server Components por defecto; `"use client"` solo donde hay interacción.
+- Actualizaciones optimistas en el registro de transacciones; historial con scroll infinito por cursor y virtualización si la lista supera ~200 elementos.
+- Carga diferida (`dynamic()`) de vistas secundarias (gráficas, formularios avanzados).
+
+### 7.5 Cálculo en el dominio
+- Funciones puras O(n) sobre el ledger; el motor de proyecciones limita el horizonte (máx. 24 meses) para acotar ocurrencias.
+- `bigint` para dinero: correcto y suficientemente rápido; no optimizar con `number`.
+- Benchmarks en `packages/domain/src/**/*.bench.ts`; una regresión > 20 % se trata como bug.
+
+### 7.6 Agentes de apoyo
+Para auditorías de rendimiento delegar en `performance-engineer` (opus), carga en `load-tester`, consultas en `database-expert` y web en `mobile-optimizer`.
+
+## 8. Notas de entorno (Windows)
 
 - Si `node`/`pnpm` no aparecen en una shell nueva, refrescar PATH en PowerShell:
   `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`
