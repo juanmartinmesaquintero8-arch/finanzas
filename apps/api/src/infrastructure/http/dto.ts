@@ -130,3 +130,25 @@ export class ProjectionQueryDto {
   @IsDateString({}, { message: 'El parámetro "to" es obligatorio y debe tener formato YYYY-MM-DD' })
   to!: string;
 }
+
+/** PUT /transactions/:id usa el mismo cuerpo que POST. */
+export class UpdateTransactionDto extends CreateTransactionDto {}
+
+/** PUT /scheduled-expenses/:id usa el mismo cuerpo que POST. */
+export class UpdateScheduledExpenseDto extends CreateScheduledExpenseDto {}
+
+export class UpdateAccountDto {
+  @IsOptional()
+  @IsString({ message: 'El nombre debe ser texto' })
+  @IsNotEmpty({ message: 'El nombre de la cuenta es obligatorio' })
+  @MaxLength(80, { message: 'El nombre no puede superar 80 caracteres' })
+  name?: string;
+
+  @IsOptional()
+  @IsIn(ACCOUNT_TYPES, { message: `El tipo de cuenta debe ser uno de: ${ACCOUNT_TYPES.join(', ')}` })
+  type?: AccountType;
+
+  @IsOptional()
+  @Matches(INTEGER, { message: AMOUNT_MSG })
+  initialBalance?: string;
+}
