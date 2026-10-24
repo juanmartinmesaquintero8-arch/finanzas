@@ -1,4 +1,4 @@
-﻿import { Account } from '../account/account';
+import { Account } from '../account/account';
 import { ScheduledExpense } from '../scheduled/scheduled-expense';
 import { Transaction } from '../transaction/transaction';
 

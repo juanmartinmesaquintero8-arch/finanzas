@@ -143,3 +143,6 @@ Para auditorías de rendimiento delegar en `performance-engineer` (opus), carga 
 - Si `node`/`pnpm` no aparecen en una shell nueva, refrescar PATH en PowerShell:
   `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`
 - `.env` (no versionado) a partir de `.env.example`.
+- **Nunca escribir archivos con PowerShell 5.1** (`Set-Content`, `Out-File`, `ConvertTo-Json`): agregan BOM y rompen `package.json` (Vitest/PostCSS fallan). Usar la herramienta Write/Edit.
+- Antes de cada merge a `main`, correr `pnpm -r --workspace-concurrency=1 test` y revisar el resultado **de cada paquete**, no solo la última línea.
+- BD en UTF8 obligatoria. `pnpm db:start` avisa si no lo está; `pnpm db:start --reset-encoding` la recrea (borra datos). `pnpm db:seed` carga datos de ejemplo.
