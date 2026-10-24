@@ -41,3 +41,15 @@ Para apagar todo, presiona `Ctrl + C` en cada terminal.
 - **Atajo:** en tu escritorio hay un acceso directo llamado "Finanzas (proyecto)" que abre esta carpeta.
 - **Datos de ejemplo:** si la app está vacía y quieres ver cómo se ve con datos, con la base de datos encendida escribe `pnpm db:seed`. Solo carga los ejemplos si todavía no tienes cuentas.
 - **Si la base de datos muestra un aviso de "UTF8":** escribe `pnpm db:start --reset-encoding`. Ojo: esto **borra** los datos guardados y deja la base lista para tildes y emojis.
+
+## Usarla en el celular
+
+Hay una versión pensada para tu celular Android. **Tus datos se guardan solo en el celular**: no hay servidor y nadie más los ve.
+
+- Se instala como una app normal (con su ícono) y funciona sin internet.
+- Dentro de la app, en **Ajustes**, puedes hacer una **copia de seguridad** (un archivo que puedes mandarte por WhatsApp, Drive o correo) y **recuperarla** si cambias de celular.
+- Si es tu primera vez, la app te deja mirar todo con **datos de ejemplo** y luego borrarlos.
+
+Pasos para instalarla en tu celular: _(se completarán cuando tengamos la dirección de la app)_.
+
+Para probarla en el computador: `pnpm dev:mobile` y abre [http://localhost:3100](http://localhost:3100).
