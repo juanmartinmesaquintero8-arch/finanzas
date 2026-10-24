@@ -9,12 +9,25 @@ import type {
   CreateScheduledExpenseInput,
   CreateTransactionInput,
   TransactionPage,
+  UpdateAccountInput,
 } from '@/lib/types';
 
 const mutations = () => createMutations(getApiClient(), revalidateTag);
 
 export async function createTransactionAction(input: CreateTransactionInput): Promise<ActionResult> {
   return mutations().createTransaction(input);
+}
+
+export async function updateTransactionAction(id: string, input: CreateTransactionInput): Promise<ActionResult> {
+  return mutations().updateTransaction(id, input);
+}
+
+export async function updateAccountAction(id: string, input: UpdateAccountInput): Promise<ActionResult> {
+  return mutations().updateAccount(id, input);
+}
+
+export async function updateScheduledExpenseAction(id: string, input: CreateScheduledExpenseInput): Promise<ActionResult> {
+  return mutations().updateScheduledExpense(id, input);
 }
 
 export async function deleteTransactionAction(id: string): Promise<ActionResult> {

@@ -66,6 +66,9 @@ export interface CreateAccountInput {
   initialBalance: string;
 }
 
+/** PATCH /accounts/:id: la web siempre envía los tres campos. */
+export type UpdateAccountInput = CreateAccountInput;
+
 export interface CreateTransactionInput {
   type: TransactionType;
   amount: string;

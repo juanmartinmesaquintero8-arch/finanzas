@@ -13,9 +13,10 @@ interface Props {
   today: string;
   onSettle: (id: string, through: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onEdit?: (item: ScheduledExpense) => void;
 }
 
-export function ScheduledList({ items, accounts, today, onSettle, onDelete }: Props) {
+export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEdit }: Props) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +88,16 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete }: Pr
                   >
                     Ya lo pagué
                   </button>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      className={ui.buttonGhost}
+                      aria-label={`Editar ${s.description}`}
+                      onClick={() => onEdit(s)}
+                    >
+                      Editar
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={ui.buttonGhost}

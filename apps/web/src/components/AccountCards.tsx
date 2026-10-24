@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { formatMoneyView } from '@/lib/format';
 import type { Projection } from '@/lib/types';
 import styles from './AccountCards.module.css';
@@ -17,6 +18,9 @@ export function AccountCards({ accounts }: Props) {
           <span className={styles.available}>
             Disponible <strong>{formatMoneyView(a.available)}</strong>
           </span>
+          <Link href={`/cuentas/${a.accountId}/editar`} className={styles.edit} aria-label={`Editar cuenta ${a.name}`}>
+            Editar
+          </Link>
         </li>
       ))}
     </ul>

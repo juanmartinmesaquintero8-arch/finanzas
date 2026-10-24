@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import type { ActionResult } from '@/lib/action-result';
 import { formatGroupedDigits } from '@/lib/format';
-import type { Account, CreateScheduledExpenseInput, Frequency } from '@/lib/types';
+import type { Account, CreateScheduledExpenseInput, Frequency, ScheduledExpense } from '@/lib/types';
 import { validateScheduledForm, type FieldErrors } from '@/lib/validation';
 import { ChipGroup } from './ChipGroup';
 import styles from './Form.module.css';
@@ -21,14 +21,19 @@ interface Props {
   today: string;
   onSubmit: (input: CreateScheduledExpenseInput) => Promise<ActionResult>;
   onDone?: () => void;
+  /** Si se pasa, el formulario edita este gasto (precargado) en vez de crear uno nuevo. */
+  expense?: ScheduledExpense;
+  onCancel?: () => void;
 }
 
-export function ScheduledForm({ accounts, today, onSubmit, onDone }: Props) {
-  const [description, setDescription] = useState('');
-  const [amountText, setAmountText] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [frequency, setFrequency] = useState<Frequency>('MONTHLY');
-  const [startDate, setStartDate] = useState(today);
+export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCancel }: Props) {
+  const editing = !!expense;
+  const [description, setDescription] = useState(expense?.description ?? '');
+  const [amountText, setAmountText] = useState(expense ? formatGroupedDigits(expense.amount.amount) : '');
+  const [accountId, setAccountId] = useState(expense?.accountId ?? '');
+  const [frequency, setFrequency] = useState<Frequency>(expense?.frequency ?? 'MONTHLY');
+  const [startDate, setStartDate] = useState(expense?.startDate ?? today);
+  const [endDate, setEndDate] = useState(expense?.endDate ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,7 +41,14 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setServerError(null);
-    const result = validateScheduledForm({ description, amountText, accountId, frequency, startDate });
+    const result = validateScheduledForm({
+      description,
+      amountText,
+      accountId,
+      frequency,
+      startDate,
+      endDate: frequency === 'ONCE' ? '' : endDate,
+    });
     if (!result.ok) {
       setErrors(result.errors);
       return;
@@ -46,8 +58,10 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone }: Props) {
     try {
       const res = await onSubmit(result.value);
       if (res.ok) {
-        setDescription('');
-        setAmountText('');
+        if (!editing) {
+          setDescription('');
+          setAmountText('');
+        }
         onDone?.();
       } else setServerError(res.error);
     } catch {
@@ -113,14 +127,35 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone }: Props) {
         />
         {errors.startDate && <p className={ui.error}>{errors.startDate}</p>}
       </div>
+      {frequency !== 'ONCE' && (
+        <div className={ui.field}>
+          <label className={ui.label} htmlFor="sc-end">
+            Fecha del último pago (opcional)
+          </label>
+          <input
+            id="sc-end"
+            type="date"
+            className={ui.input}
+            value={endDate}
+            aria-invalid={errors.endDate ? 'true' : undefined}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+          {errors.endDate && <p className={ui.error}>{errors.endDate}</p>}
+        </div>
+      )}
       {serverError && (
         <p role="alert" className={ui.alert}>
           {serverError}
         </p>
       )}
       <button type="submit" className={ui.button} disabled={pending}>
-        {pending ? 'Guardando…' : 'Guardar'}
+        {pending ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar'}
       </button>
+      {onCancel && (
+        <button type="button" className={ui.buttonGhost} onClick={onCancel}>
+          Cancelar
+        </button>
+      )}
     </form>
   );
 }

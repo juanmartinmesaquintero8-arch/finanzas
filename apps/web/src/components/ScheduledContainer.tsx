@@ -6,6 +6,7 @@ import {
   createScheduledExpenseAction,
   deleteScheduledExpenseAction,
   settleScheduledExpenseAction,
+  updateScheduledExpenseAction,
 } from '@/app/actions';
 import type { Account, ScheduledExpense } from '@/lib/types';
 import { ScheduledList } from './ScheduledList';
@@ -29,9 +30,20 @@ async function ensureOk(promise: Promise<{ ok: boolean; error?: string }>): Prom
 
 export function ScheduledContainer({ items, accounts, today }: Props) {
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<ScheduledExpense | null>(null);
   return (
     <div className={ui.stack}>
-      {creating ? (
+      {editing ? (
+        <ScheduledForm
+          key={editing.id}
+          accounts={accounts}
+          today={today}
+          expense={editing}
+          onSubmit={(input) => updateScheduledExpenseAction(editing.id, input)}
+          onDone={() => setEditing(null)}
+          onCancel={() => setEditing(null)}
+        />
+      ) : creating ? (
         <ScheduledForm
           accounts={accounts}
           today={today}
@@ -49,6 +61,10 @@ export function ScheduledContainer({ items, accounts, today }: Props) {
         today={today}
         onSettle={(id, through) => ensureOk(settleScheduledExpenseAction(id, through))}
         onDelete={(id) => ensureOk(deleteScheduledExpenseAction(id))}
+        onEdit={(item) => {
+          setCreating(false);
+          setEditing(item);
+        }}
       />
     </div>
   );
