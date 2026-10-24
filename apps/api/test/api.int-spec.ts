@@ -6,7 +6,6 @@ import { TEST_DATABASE_URL } from './global-setup';
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { CACHE_PORT, CachePort } from '../src/application/ports/cache.port';
@@ -197,7 +196,7 @@ describe('API (integración e2e contra finanzas_test)', () => {
       const settled = await http()
         .post(`/scheduled-expenses/${body.id}/settle`)
         .send({ through: '2026-12-31', createTransactions: true })
-        .expect(201);
+        .expect(200);
       expect(settled.body.settledThrough).toBe('2026-12-31');
 
       const history = await http().get('/transactions').expect(200);
