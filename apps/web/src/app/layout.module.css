@@ -1,0 +1,17 @@
+.main {
+  --gutter: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) calc(var(--gutter) + env(safe-area-inset-right, 0px))
+    calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px) calc(var(--gutter) + env(safe-area-inset-left, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+@media (min-width: 768px) {
+  .main {
+    --gutter: 24px;
+    padding-top: 32px;
+  }
+}
