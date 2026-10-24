@@ -28,6 +28,16 @@ Sistema de control de finanzas personales.
 
 Entorno: Node 24 LTS, pnpm 9. Ubicación: `C:\Users\juanm\dev\finanzas` (fuera de OneDrive a propósito: OneDrive rompe `node_modules` y no permitía crear carpetas).
 
+### 2.1 App móvil local-first (decisión del 2026-10-24)
+
+El usuario (Android) quiere la app **solo en su celular, con los datos únicamente en el dispositivo**:
+- `apps/mobile`: Next.js con `output: 'export'` (estático) + **PWA** instalable y offline (manifest + service worker).
+- Persistencia en **IndexedDB** del navegador mediante repositorios que implementan los puertos de `packages/domain`. Ningún dato financiero sale del teléfono.
+- **Copia de seguridad**: exportar/importar un archivo JSON versionado (compartir vía Web Share API a WhatsApp/Drive/correo).
+- Publicación de la "caja" estática en **GitHub Pages** (HTTPS, gratis) vía GitHub Actions. GitHub nunca recibe datos del usuario.
+- UI compartida con `apps/web` a través de `packages/ui` (componentes presentacionales y helpers puros). Sin duplicar.
+- `apps/api` + PostgreSQL se mantienen para la versión de escritorio y una futura sincronización opcional.
+
 ## 3. Arquitectura
 
 Arquitectura hexagonal (puertos y adaptadores) + DDD ligero.
