@@ -69,7 +69,9 @@ export class PrismaTransactionRepository implements TransactionRepository {
   }
 
   async save(transaction: Transaction): Promise<void> {
-    await this.client.transaction.create({ data: toTransactionData(transaction) });
+    // Upsert: crea el movimiento o lo reemplaza por completo (edición, incluso con cambio de tipo).
+    const data = toTransactionData(transaction);
+    await this.client.transaction.upsert({ where: { id: transaction.id }, create: data, update: data });
   }
 
   async saveMany(transactions: readonly Transaction[]): Promise<void> {

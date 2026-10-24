@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { CreateAccountUseCase } from '../../application/accounts/create-account.use-case';
 import { GetAccountUseCase } from '../../application/accounts/get-account.use-case';
 import { ListAccountsUseCase } from '../../application/accounts/list-accounts.use-case';
-import { CreateAccountDto } from './dto';
+import { UpdateAccountUseCase } from '../../application/accounts/update-account.use-case';
+import { CreateAccountDto, UpdateAccountDto } from './dto';
 
 @Controller('accounts')
 export class AccountsController {
@@ -10,6 +11,7 @@ export class AccountsController {
     private readonly createAccount: CreateAccountUseCase,
     private readonly listAccounts: ListAccountsUseCase,
     private readonly getAccount: GetAccountUseCase,
+    private readonly updateAccount: UpdateAccountUseCase,
   ) {}
 
   @Post()
@@ -25,5 +27,10 @@ export class AccountsController {
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.getAccount.execute(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAccountDto) {
+    return this.updateAccount.execute(id, dto);
   }
 }

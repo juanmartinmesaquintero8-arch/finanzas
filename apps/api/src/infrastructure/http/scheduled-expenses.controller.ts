@@ -1,9 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import { CreateScheduledExpenseUseCase } from '../../application/scheduled-expenses/create-scheduled-expense.use-case';
 import { DeleteScheduledExpenseUseCase } from '../../application/scheduled-expenses/delete-scheduled-expense.use-case';
 import { ListScheduledExpensesUseCase } from '../../application/scheduled-expenses/list-scheduled-expenses.use-case';
 import { SettleScheduledExpenseUseCase } from '../../application/scheduled-expenses/settle-scheduled-expense.use-case';
-import { CreateScheduledExpenseDto, SettleScheduledExpenseDto } from './dto';
+import { UpdateScheduledExpenseUseCase } from '../../application/scheduled-expenses/update-scheduled-expense.use-case';
+import { CreateScheduledExpenseDto, SettleScheduledExpenseDto, UpdateScheduledExpenseDto } from './dto';
 
 @Controller('scheduled-expenses')
 export class ScheduledExpensesController {
@@ -12,6 +13,7 @@ export class ScheduledExpensesController {
     private readonly listExpenses: ListScheduledExpensesUseCase,
     private readonly deleteExpense: DeleteScheduledExpenseUseCase,
     private readonly settleExpense: SettleScheduledExpenseUseCase,
+    private readonly updateExpense: UpdateScheduledExpenseUseCase,
   ) {}
 
   @Post()
@@ -22,6 +24,11 @@ export class ScheduledExpensesController {
   @Get()
   list() {
     return this.listExpenses.execute();
+  }
+
+  @Put(':id')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateScheduledExpenseDto) {
+    return this.updateExpense.execute(id, dto);
   }
 
   @Delete(':id')
