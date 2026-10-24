@@ -1,16 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Account, ScheduledExpense, Transaction } from '@/lib/types';
-import { AccountCards } from './AccountCards';
-import { AddTransactionForm } from './AddTransactionForm';
+import { AccountCards, AddTransactionForm, HistoryList, NewAccountForm, ScheduledForm, ScheduledList, type Account, type ScheduledExpense, type Transaction } from '@finanzas/ui';
 import { EditAccountContainer } from './EditAccountContainer';
 import { EditTransactionContainer } from './EditTransactionContainer';
-import { HistoryList } from './HistoryList';
-import { NewAccountForm } from './NewAccountForm';
 import { ScheduledContainer } from './ScheduledContainer';
-import { ScheduledForm } from './ScheduledForm';
-import { ScheduledList } from './ScheduledList';
 
 const push = vi.fn();
 const actions = vi.hoisted(() => ({

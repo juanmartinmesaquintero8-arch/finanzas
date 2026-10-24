@@ -1,5 +1,5 @@
 import { ApiError, NetworkError } from './api-client';
-import { todayISO } from './format';
+import { todayISO } from '@finanzas/ui';
 
 /**
  * "Hoy" para consultar la API: la API calcula con el día UTC, que puede ir un día

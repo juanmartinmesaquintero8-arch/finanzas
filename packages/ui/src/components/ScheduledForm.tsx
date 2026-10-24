@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import type { ActionResult } from '@/lib/action-result';
-import { formatGroupedDigits } from '@/lib/format';
-import type { Account, CreateScheduledExpenseInput, Frequency, ScheduledExpense } from '@/lib/types';
-import { validateScheduledForm, type FieldErrors } from '@/lib/validation';
+import type { ActionResult } from '../lib/action-result';
+import { formatGroupedDigits } from '../lib/format';
+import type { Account, CreateScheduledExpenseInput, Frequency, ScheduledExpense } from '../lib/types';
+import { validateScheduledForm, type FieldErrors } from '../lib/validation';
 import { ChipGroup } from './ChipGroup';
 import styles from './Form.module.css';
 import ui from './ui.module.css';

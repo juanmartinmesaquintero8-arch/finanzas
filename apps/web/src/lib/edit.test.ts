@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApiClient, type ApiClient } from './api-client';
 import { createMutations } from './mutations';
-import { validateScheduledForm } from './validation';
+import { validateScheduledForm } from '@finanzas/ui';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

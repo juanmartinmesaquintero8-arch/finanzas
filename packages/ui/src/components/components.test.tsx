@@ -6,7 +6,7 @@ import { AvailableBalanceCard } from './AvailableBalanceCard';
 import { HistoryList } from './HistoryList';
 import { HistoryView } from './HistoryView';
 import { TransactionTypeChips } from './TransactionTypeChips';
-import type { Account, Transaction } from '@/lib/types';
+import type { Account, Transaction } from '../lib/types';
 
 const cop = (amount: string) => ({ amount, currency: 'COP' });
 

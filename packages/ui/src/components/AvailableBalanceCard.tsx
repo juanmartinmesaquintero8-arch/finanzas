@@ -1,16 +1,20 @@
 import Link from 'next/link';
-import { HORIZONS, type Horizon } from '@/lib/domain-helpers';
-import { formatMoneyView } from '@/lib/format';
-import type { Projection } from '@/lib/types';
+import { HORIZONS, type Horizon } from '../lib/domain-helpers';
+import { formatMoneyView } from '../lib/format';
+import type { Projection } from '../lib/types';
 import styles from './AvailableBalanceCard.module.css';
 import ui from './ui.module.css';
+
+const defaultHorizonHref = (h: Horizon) => `/?h=${h}`;
 
 interface Props {
   projection: Pick<Projection, 'availableBalance' | 'netWorth' | 'committed' | 'isShortfall'>;
   horizon: Horizon;
+  /** Enlace de cada chip de horizonte. */
+  horizonHref?: (horizon: Horizon) => string;
 }
 
-export function AvailableBalanceCard({ projection, horizon }: Props) {
+export function AvailableBalanceCard({ projection, horizon, horizonHref = defaultHorizonHref }: Props) {
   const { availableBalance, netWorth, committed, isShortfall } = projection;
   return (
     <section className={`${styles.hero} ${isShortfall ? styles.short : ''}`} aria-labelledby="available-title">
@@ -40,7 +44,7 @@ export function AvailableBalanceCard({ projection, horizon }: Props) {
         {HORIZONS.map((h) => (
           <Link
             key={h.value}
-            href={`/?h=${h.value}`}
+            href={horizonHref(h.value)}
             className={`${ui.chip} ${styles.horizonChip}`}
             aria-current={h.value === horizon ? 'true' : undefined}
             replace

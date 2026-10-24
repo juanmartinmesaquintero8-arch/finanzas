@@ -2,8 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { createTransactionAction } from '@/app/actions';
-import type { Account } from '@/lib/types';
-import { AddTransactionForm } from './AddTransactionForm';
+import { AddTransactionForm, type Account } from '@finanzas/ui';
 
 export function AddTransactionContainer({ accounts, today }: { accounts: Account[]; today: string }) {
   const router = useRouter();

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { nextOccurrence } from '@/lib/domain-helpers';
-import { formatMoneyView, formatShortDate, frequencyLabel } from '@/lib/format';
-import type { Account, ScheduledExpense } from '@/lib/types';
+import { nextOccurrence } from '../lib/domain-helpers';
+import { formatMoneyView, formatShortDate, frequencyLabel } from '../lib/format';
+import type { Account, ScheduledExpense } from '../lib/types';
 import styles from './ScheduledList.module.css';
 import ui from './ui.module.css';
 

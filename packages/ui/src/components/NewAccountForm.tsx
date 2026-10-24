@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import type { ActionResult } from '@/lib/action-result';
-import { formatGroupedDigits } from '@/lib/format';
-import type { Account, AccountType, CreateAccountInput } from '@/lib/types';
+import type { ActionResult } from '../lib/action-result';
+import { formatGroupedDigits } from '../lib/format';
+import type { Account, AccountType, CreateAccountInput } from '../lib/types';
 import { ChipGroup } from './ChipGroup';
 import styles from './Form.module.css';
 import ui from './ui.module.css';

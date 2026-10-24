@@ -1,12 +1,5 @@
-import type { ActionResult } from './action-result';
+import type { ActionResult, CreateAccountInput, CreateScheduledExpenseInput, CreateTransactionInput, TransactionPage, UpdateAccountInput } from '@finanzas/ui';
 import { ApiError, CACHE_TAGS, NetworkError, type ApiClient } from './api-client';
-import type {
-  CreateAccountInput,
-  CreateScheduledExpenseInput,
-  CreateTransactionInput,
-  TransactionPage,
-  UpdateAccountInput,
-} from './types';
 
 type Revalidate = (tag: string) => void;
 

@@ -1,8 +1,7 @@
 'use client';
 
 import { deleteTransactionAction, loadTransactionsAction } from '@/app/actions';
-import type { Account, TransactionPage } from '@/lib/types';
-import { HistoryView } from './HistoryView';
+import { HistoryView, type Account, type TransactionPage } from '@finanzas/ui';
 
 interface Props {
   initialPage: TransactionPage;

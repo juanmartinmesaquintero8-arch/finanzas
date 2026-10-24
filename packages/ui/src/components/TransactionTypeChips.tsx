@@ -1,6 +1,6 @@
 'use client';
 
-import type { TransactionType } from '@/lib/types';
+import type { TransactionType } from '../lib/types';
 import { ChipGroup } from './ChipGroup';
 
 export const TRANSACTION_TYPE_OPTIONS: { value: TransactionType; label: string }[] = [

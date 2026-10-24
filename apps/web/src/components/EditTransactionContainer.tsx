@@ -2,8 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { updateTransactionAction } from '@/app/actions';
-import type { Account, Transaction } from '@/lib/types';
-import { AddTransactionForm } from './AddTransactionForm';
+import { AddTransactionForm, type Account, type Transaction } from '@finanzas/ui';
 
 interface Props {
   transaction: Transaction;
