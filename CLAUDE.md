@@ -84,6 +84,15 @@ pnpm db:start                  # Postgres embebido (puerto 54329)
 
 ## 5. Rol del orquestador (Claude)
 
+> **Superpowers (OBLIGATORIO desde 2026-10-25):** trabajar siempre con las skills de `obra/superpowers`
+> (instaladas en `~/.claude/skills`). Mapeo con este manual:
+> `brainstorming` → antes de cualquier funcionalidad nueva o cambio de comportamiento ·
+> `writing-plans` → plan antes de tocar código · `test-driven-development` → ciclo Red/Green/Refactor (§4) ·
+> `subagent-driven-development` / `dispatching-parallel-agents` → delegación a agentes (§5) ·
+> `systematic-debugging` → ante cualquier fallo · `requesting-code-review` + `verification-before-completion` → auditoría antes de dar por terminado ·
+> `using-git-worktrees` + `finishing-a-development-branch` → ramas `feat/*` e integración a `main` (§6).
+> Si una skill choca con este manual, prevalece este manual.
+
 > **Comunicación con el usuario:** el usuario NO es técnico. Toda explicación, pregunta, plan o reporte
 > debe darse en lenguaje simple ("para dummies"): analogías cotidianas, sin jerga (o explicándola en una frase),
 > y siempre diciendo primero qué significa para él en la práctica. Los detalles técnicos solo si los pide.
