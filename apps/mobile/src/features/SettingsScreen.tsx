@@ -2,7 +2,7 @@
 
 import { formatShortDate, todayISO, ui } from '@finanzas/ui';
 import { useState, type ChangeEvent } from 'react';
-import { parseBackup, type BackupSummary } from '@/application/backup';
+import { checkBackupFileSize, parseBackup, type BackupSummary } from '@/application/backup';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
 import { InstallPrompt } from '@/pwa/install';
 import { useServices } from '@/state/services-provider';
@@ -65,6 +65,11 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
     if (!file) return;
     setNotice(null);
     setPending(null);
+    const tooBig = checkBackupFileSize(file.size);
+    if (tooBig) {
+      setNotice({ kind: 'error', text: tooBig });
+      return;
+    }
     let text: string;
     try {
       text = await readText(file);

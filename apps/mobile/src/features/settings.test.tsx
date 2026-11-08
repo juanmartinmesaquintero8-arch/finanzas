@@ -159,3 +159,17 @@ describe('Ajustes: datos de ejemplo', () => {
     expect(await services.accounts.list()).toEqual([]);
   });
 });
+
+describe('Ajustes: archivo demasiado grande', () => {
+  it('avisa sin leer ni validar el archivo', async () => {
+    await renderWithServices(<SettingsScreen deliver={vi.fn()} />, services);
+    const valid = JSON.stringify({ version: 1, exportedAt: '2026-03-10T15:00:00.000Z', accounts: [], transactions: [], scheduledExpenses: [] });
+    const file = fileOf(valid);
+    Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 });
+    const read = vi.spyOn(FileReader.prototype, 'readAsText');
+    await userEvent.upload(await screen.findByLabelText('Recuperar copia'), file);
+    expect(await screen.findByRole('alert')).toHaveTextContent('El archivo es demasiado grande para ser una copia de Mis Finanzas (máximo 10 MB).');
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /sí, recuperar/i })).not.toBeInTheDocument();
+  });
+});
