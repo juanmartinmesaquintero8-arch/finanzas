@@ -1,4 +1,4 @@
-import { Account, Money } from '@finanzas/domain';
+import { Account, Money, ScheduledExpense, TransactionFactory } from '@finanzas/domain';
 import { deleteDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openFinanzasDb, type FinanzasDb } from '@/data/database';
@@ -237,7 +237,7 @@ describe('datos de ejemplo y borrado total', () => {
 });
 
 describe('límites', () => {
-  const TOO_BIG = 'El archivo es demasiado grande para ser una copia de Mis Finanzas (máximo 10 MB).';
+  const TOO_BIG = 'El archivo pesa más de 50 MB, el máximo que la app puede recuperar.';
   const TOO_MANY = 'La copia tiene más datos de los que la app puede manejar, así que no se puede usar.';
   const DAMAGED = 'La copia de seguridad está dañada o incompleta, así que no se puede usar.';
   const UUID = '3f2b8c1e-0000-4000-8000-000000000000';
@@ -245,6 +245,9 @@ describe('límites', () => {
   const acc = (over: Record<string, unknown> = {}) => ({ id: 'a1', name: 'Cuenta', type: 'BANK', initialBalance: cop('0'), ...over });
   const tx = (over: Record<string, unknown> = {}) => ({
     id: 't1', type: 'EXPENSE', amount: cop('10'), date: '2026-03-09', description: 'Café', category: 'Comida', accountId: 'a1', ...over,
+  });
+  const sched = (over: Record<string, unknown> = {}) => ({
+    id: 's1', description: 'Arriendo', amount: cop('5'), accountId: 'a1', frequency: 'MONTHLY', startDate: '2026-04-01', endDate: null, settledThrough: null, ...over,
   });
   const backup = (over: Record<string, unknown> = {}) =>
     JSON.stringify({ version: 1, exportedAt: NOW.toISOString(), accounts: [acc()], transactions: [], scheduledExpenses: [], ...over });
@@ -273,24 +276,63 @@ describe('límites', () => {
     expect(parseBackup(text)).toMatchObject({ ok: true, summary: { accounts: 1, transactions: 1 } });
   });
 
-  it('(b) el tamaño del archivo se revisa antes de leerlo', () => {
+  it('(b) el tamaño del archivo se revisa antes de leerlo (50 MB)', () => {
+    expect(MAX_BACKUP_BYTES).toBe(50 * 1024 * 1024);
     expect(checkBackupFileSize(MAX_BACKUP_BYTES + 1)).toBe(TOO_BIG);
     expect(checkBackupFileSize(MAX_BACKUP_BYTES)).toBeNull();
   });
 
-  it('(c) los montos aceptan exactamente el rango de int64', () => {
+  it('(c) los montos aceptan exactamente el rango de int64 y el resto da un mensaje concreto', () => {
     expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('9223372036854775807') })] })).ok).toBe(true);
     expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('-9223372036854775808') })] })).ok).toBe(true);
-    expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('9223372036854775808') })] }))).toEqual({ ok: false, error: DAMAGED });
-    expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('-9223372036854775809') })] }))).toEqual({ ok: false, error: DAMAGED });
+    const big = 'La copia no se puede usar: la cuenta «Cuenta» tiene un monto demasiado grande.';
+    expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('9223372036854775808') })] }))).toEqual({ ok: false, error: big });
+    expect(parseBackup(backup({ accounts: [acc({ initialBalance: cop('-9223372036854775809') })] }))).toEqual({ ok: false, error: big });
   });
 
-  it('(d) los textos tienen largo máximo', () => {
-    const ok = backup({ accounts: [acc({ name: 'n'.repeat(80) })], transactions: [tx({ description: 'd'.repeat(160), category: 'c'.repeat(60) })] });
-    expect(parseBackup(ok).ok).toBe(true);
-    expect(parseBackup(backup({ accounts: [acc({ name: 'n'.repeat(81) })] }))).toEqual({ ok: false, error: DAMAGED });
-    expect(parseBackup(backup({ transactions: [tx({ description: 'd'.repeat(161) })] }))).toEqual({ ok: false, error: DAMAGED });
-    expect(parseBackup(backup({ transactions: [tx({ category: 'c'.repeat(61) })] }))).toEqual({ ok: false, error: DAMAGED });
+  it('(d) los textos se aceptan hasta 2000 caracteres sin alterarlos y 2001 se rechaza con mensaje concreto', () => {
+    for (const n of [80, 160, 161, 1000, 2000]) {
+      const name = 'n'.repeat(n);
+      const description = 'd'.repeat(n);
+      const category = 'c'.repeat(n);
+      const parsed = parseBackup(backup({ accounts: [acc({ name })], transactions: [tx({ description, category })] }));
+      if (!parsed.ok) throw new Error(parsed.error);
+      expect(parsed.snapshot.accounts[0]!.name).toBe(name);
+      expect(parsed.snapshot.transactions[0]!.description).toBe(description);
+      expect(parsed.snapshot.transactions[0]!.category).toBe(category);
+    }
+    const long = (x: string) => `La copia no se puede usar: ${x} tiene un texto demasiado largo (máximo 2.000 caracteres).`;
+    const cut = `${'n'.repeat(40)}…`;
+    expect(parseBackup(backup({ accounts: [acc({ name: 'n'.repeat(2001) })] }))).toEqual({ ok: false, error: long(`la cuenta «${cut}»`) });
+    expect(parseBackup(backup({ transactions: [tx({ description: 'd'.repeat(2001) })] }))).toEqual({
+      ok: false,
+      error: long(`el movimiento «${'d'.repeat(40)}…»`),
+    });
+    expect(parseBackup(backup({ transactions: [tx({ category: 'c'.repeat(2001) })] }))).toEqual({ ok: false, error: long('el movimiento «Café»') });
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ description: 'g'.repeat(2001) })] }))).toEqual({
+      ok: false,
+      error: long(`el gasto programado «${'g'.repeat(40)}…»`),
+    });
+  });
+
+  it('(d2) mensajes concretos: sin recorte si cabe y sin texto identificable', () => {
+    const bigMoney = (x: string) => `La copia no se puede usar: ${x} tiene un monto demasiado grande.`;
+    const over = cop('9223372036854775808');
+    expect(parseBackup(backup({ transactions: [tx({ amount: over })] }))).toEqual({ ok: false, error: bigMoney('el movimiento «Café»') });
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ amount: over })] }))).toEqual({ ok: false, error: bigMoney('el gasto programado «Arriendo»') });
+    expect(parseBackup(backup({ accounts: [acc({ name: 'n'.repeat(40), initialBalance: over })] }))).toEqual({
+      ok: false,
+      error: bigMoney(`la cuenta «${'n'.repeat(40)}»`),
+    });
+    expect(parseBackup(backup({ accounts: [acc({ name: 5, initialBalance: over })] }))).toEqual({ ok: false, error: bigMoney('una cuenta') });
+    expect(parseBackup(backup({ accounts: [acc({ name: '', initialBalance: over })] }))).toEqual({ ok: false, error: bigMoney('una cuenta') });
+    expect(parseBackup(backup({ transactions: [tx({ description: undefined, amount: over })] }))).toEqual({ ok: false, error: bigMoney('un movimiento') });
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ description: null, amount: over })] }))).toEqual({
+      ok: false,
+      error: bigMoney('un gasto programado'),
+    });
+    // Otros daños siguen con el mensaje genérico.
+    expect(parseBackup(backup({ accounts: [acc({ type: 'MAGIA' })] }))).toEqual({ ok: false, error: DAMAGED });
   });
 
   it('(e) los ids sólo admiten caracteres seguros y hasta 100', () => {
@@ -302,9 +344,57 @@ describe('límites', () => {
     }
   });
 
+  it('(e2) ids inválidos en accountId, fromAccountId y toAccountId', () => {
+    const bad = ['<script>', '', 'x'.repeat(101)];
+    for (const v of bad) {
+      expect(parseBackup(backup({ transactions: [tx({ accountId: v })] }))).toEqual({ ok: false, error: DAMAGED });
+      const tr = { type: 'TRANSFER', accountId: undefined };
+      expect(parseBackup(backup({ transactions: [tx({ ...tr, fromAccountId: v, toAccountId: 'a1' })] }))).toEqual({ ok: false, error: DAMAGED });
+      expect(parseBackup(backup({ transactions: [tx({ ...tr, fromAccountId: 'a1', toAccountId: v })] }))).toEqual({ ok: false, error: DAMAGED });
+      expect(parseBackup(backup({ scheduledExpenses: [sched({ accountId: v })] }))).toEqual({ ok: false, error: DAMAGED });
+    }
+  });
+
   it('(f) rechaza demasiados elementos sin procesarlos', () => {
     const many = Array.from({ length: MAX_ITEMS.accounts + 1 }, () => ({}));
     expect(parseBackup(backup({ accounts: many }))).toEqual({ ok: false, error: TOO_MANY });
     expect(parseBackup(backup({ scheduledExpenses: Array.from({ length: MAX_ITEMS.scheduledExpenses + 1 }, () => ({})) }))).toEqual({ ok: false, error: TOO_MANY });
+    expect(parseBackup(backup({ transactions: Array.from({ length: MAX_ITEMS.transactions + 1 }, () => ({})) }))).toEqual({ ok: false, error: TOO_MANY });
+  });
+
+  it('(g) el largo de description de gastos programados: 2000 sí, 2001 no', () => {
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ description: 'g'.repeat(160) })] })).ok).toBe(true);
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ description: 'g'.repeat(2000) })] })).ok).toBe(true);
+    expect(parseBackup(backup({ scheduledExpenses: [sched({ description: 'g'.repeat(2001) })] })).ok).toBe(false);
+  });
+});
+
+describe('copia recuperable: comprobación al exportar', () => {
+  it('ida y vuelta con textos en el máximo de escritura, extremos int64 y ids UUID y demo-…', async () => {
+    const cop = (n: bigint) => Money.of(n, 'COP');
+    const uuid = crypto.randomUUID();
+    const snapshot = {
+      accounts: [
+        Account.create({ id: uuid, name: 'n'.repeat(80), type: 'BANK', initialBalance: cop(9223372036854775807n) }),
+        Account.create({ id: 'demo-efectivo', name: 'm'.repeat(80), type: 'CASH', initialBalance: cop(-9223372036854775808n) }),
+      ],
+      transactions: [
+        TransactionFactory.create({ id: 'demo-t1', type: 'EXPENSE', accountId: uuid, amount: cop(9223372036854775807n), date: new Date('2026-03-01T00:00:00Z'), description: 'd'.repeat(160), category: 'c'.repeat(60) }),
+      ],
+      scheduledExpenses: [
+        ScheduledExpense.create({ id: crypto.randomUUID(), description: 'g'.repeat(160), amount: cop(1n), accountId: 'demo-efectivo', frequency: 'MONTHLY', startDate: new Date('2026-04-01T00:00:00Z') }),
+      ],
+    };
+    await s.backup.restore(snapshot);
+    const created = await s.backup.create();
+    expect(created.problem).toBeNull();
+    expect(parseBackup(created.text).ok).toBe(true);
+  });
+
+  it('un monto ya guardado fuera de rango se nombra en problem', async () => {
+    await db.put('accounts', { id: 'a1', name: 'Vieja', type: 'BANK', initialBalance: '9223372036854775808', currency: 'COP' });
+    const created = await s.backup.create();
+    expect(created.problem).toBe('La copia no se puede usar: la cuenta «Vieja» tiene un monto demasiado grande.');
+    expect(created.text).toContain('9223372036854775808');
   });
 });

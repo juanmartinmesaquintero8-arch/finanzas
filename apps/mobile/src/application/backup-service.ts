@@ -1,6 +1,6 @@
 import type { ActionResult } from '@finanzas/ui';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
-import { backupFileName, isBackupReminderDue, serializeBackup } from './backup';
+import { backupFileName, checkBackupFileSize, isBackupReminderDue, parseBackup, serializeBackup } from './backup';
 import { writeAction, type ServiceContext } from './support';
 
 const LAST_BACKUP_KEY = 'lastBackupAt';
@@ -9,6 +9,8 @@ export interface CreatedBackup {
   text: string;
   fileName: string;
   exportedAt: string;
+  /** Por qué esta copia no se podría recuperar (nombra el dato), o null si sí se puede. */
+  problem: string | null;
 }
 
 export class BackupService {
@@ -18,7 +20,10 @@ export class BackupService {
   async create(): Promise<CreatedBackup> {
     const now = this.ctx.now();
     const snapshot = await this.ctx.ledger.readAll();
-    return { text: serializeBackup(snapshot, now), fileName: backupFileName(now), exportedAt: now.toISOString() };
+    const text = serializeBackup(snapshot, now);
+    const parsed = parseBackup(text);
+    const problem = parsed.ok ? checkBackupFileSize(new TextEncoder().encode(text).length) : parsed.error;
+    return { text, fileName: backupFileName(now), exportedAt: now.toISOString(), problem };
   }
 
   /** Se llama cuando la persona ya compartió o descargó el archivo. */

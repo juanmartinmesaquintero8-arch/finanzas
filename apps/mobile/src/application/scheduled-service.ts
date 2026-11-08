@@ -1,6 +1,6 @@
 import { ScheduledExpense, TransactionFactory, UnknownAccountError, assertDomain } from '@finanzas/domain';
 import type { ActionResult, CreateScheduledExpenseInput, ScheduledExpense as ScheduledView } from '@finanzas/ui';
-import { notFound, parseDay, parseMoney, writeAction, type ServiceContext } from './support';
+import { assertTextLength, notFound, parseDay, parseMoney, writeAction, type ServiceContext } from './support';
 import { toScheduledView } from './views';
 
 export class ScheduledService {
@@ -64,6 +64,7 @@ export class ScheduledService {
   }
 
   private build(id: string, input: CreateScheduledExpenseInput, settledThrough?: Date): ScheduledExpense {
+    assertTextLength('description', input.description);
     return ScheduledExpense.create({
       id,
       description: input.description,

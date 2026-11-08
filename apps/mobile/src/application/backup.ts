@@ -14,20 +14,19 @@ import {
   type TransactionType,
 } from '@finanzas/domain';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
+import { MAX_IMPORT_TEXT, isInt64 } from './limits';
 import { toAccountView, toScheduledView, toTransactionView } from './views';
 
 /** Versión del formato del archivo. Subirla cuando cambie la forma de los datos. */
 export const BACKUP_VERSION = 1;
 
 /** Tamaño máximo del archivo de copia (bytes). */
-export const MAX_BACKUP_BYTES = 10 * 1024 * 1024;
+export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 /** Cantidad máxima de elementos por lista. */
 export const MAX_ITEMS = { accounts: 500, transactions: 200_000, scheduledExpenses: 2_000 } as const;
-/** Largos máximos de texto: los mismos de los formularios y de la API. */
-export const MAX_TEXT = { id: 100, name: 80, description: 160, category: 60 } as const;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
-const INT64_MIN = -(2n ** 63n);
-const INT64_MAX = 2n ** 63n - 1n;
+export const UNUSABLE_PREFIX = 'La copia no se puede usar: ';
+const LABEL_MAX = 40;
 const REMINDER_DAYS = 7;
 const DAY_MS = 86_400_000;
 
@@ -66,7 +65,7 @@ export function serializeBackup(snapshot: LedgerSnapshot, exportedAt: Date): str
 }
 
 const NOT_A_BACKUP = 'Este archivo no parece una copia de seguridad de Mis Finanzas.';
-const TOO_BIG = 'El archivo es demasiado grande para ser una copia de Mis Finanzas (máximo 10 MB).';
+const TOO_BIG = 'El archivo pesa más de 50 MB, el máximo que la app puede recuperar.';
 const TOO_MANY = 'La copia tiene más datos de los que la app puede manejar, así que no se puede usar.';
 const DAMAGED = 'La copia de seguridad está dañada o incompleta, así que no se puede usar.';
 const NEWER = 'Esta copia fue hecha con una versión más nueva de la app. Actualiza la app e inténtalo de nuevo.';
@@ -84,9 +83,24 @@ const str = (v: unknown): string => {
   if (typeof v !== 'string') throw new Invalid(DAMAGED);
   return v;
 };
-const text = (v: unknown, max: number): string => {
+type Kind = 'account' | 'transaction' | 'scheduled';
+/** Cómo nombrar el dato en los mensajes: «la cuenta «X»» o, si no hay texto que lo identifique, «una cuenta». */
+function labelOf(kind: Kind, identifier: unknown): string {
+  const nouns = {
+    account: ['la cuenta', 'una cuenta'],
+    transaction: ['el movimiento', 'un movimiento'],
+    scheduled: ['el gasto programado', 'un gasto programado'],
+  } as const;
+  const [named, generic] = nouns[kind];
+  if (typeof identifier !== 'string' || identifier.trim().length === 0) return generic;
+  const shown = identifier.length > LABEL_MAX ? `${identifier.slice(0, LABEL_MAX)}…` : identifier;
+  return `${named} «${shown}»`;
+}
+const text = (v: unknown, who: string): string => {
   const s = str(v);
-  if (s.length > max) throw new Invalid(DAMAGED);
+  if (s.length > MAX_IMPORT_TEXT) {
+    throw new Invalid(`${UNUSABLE_PREFIX}${who} tiene un texto demasiado largo (máximo 2.000 caracteres).`);
+  }
   return s;
 };
 const id = (v: unknown): string => {
@@ -95,14 +109,14 @@ const id = (v: unknown): string => {
   return s;
 };
 const optStr = (v: unknown): string | undefined => (v === null || v === undefined ? undefined : str(v));
-const optText = (v: unknown, max: number): string | undefined => (v === null || v === undefined ? undefined : text(v, max));
-const money = (v: unknown): Money => {
+const optText = (v: unknown, who: string): string | undefined => (v === null || v === undefined ? undefined : text(v, who));
+const money = (v: unknown, who: string): Money => {
   if (!isObj(v)) throw new Invalid(DAMAGED);
   const amount = str(v.amount);
   const currency = str(v.currency);
   if (!/^-?\d+$/.test(amount)) throw new Invalid(DAMAGED);
   const value = BigInt(amount);
-  if (value < INT64_MIN || value > INT64_MAX) throw new Invalid(DAMAGED);
+  if (!isInt64(value)) throw new Invalid(`${UNUSABLE_PREFIX}${who} tiene un monto demasiado grande.`);
   return Money.of(value, currency);
 };
 const date = (v: unknown): Date => {
@@ -121,22 +135,26 @@ const arrayOf = (v: unknown): unknown[] => {
 
 function parseAccount(raw: unknown): Account {
   if (!isObj(raw)) throw new Invalid(DAMAGED);
+  const who = labelOf('account', raw.name);
+  // El monto se revisa antes que el texto: así el mensaje puede nombrar el dato aunque su texto esté dañado.
+  const initialBalance = money(raw.initialBalance, who);
   return Account.create({
     id: id(raw.id),
-    name: text(raw.name, MAX_TEXT.name),
+    name: text(raw.name, who),
     type: oneOf<AccountType>(ACCOUNT_TYPES, raw.type),
-    initialBalance: money(raw.initialBalance),
+    initialBalance,
   });
 }
 
 function parseTransaction(raw: unknown): Transaction {
   if (!isObj(raw)) throw new Invalid(DAMAGED);
+  const who = labelOf('transaction', raw.description);
   const common = {
     id: id(raw.id),
-    amount: money(raw.amount),
+    amount: money(raw.amount, who),
     date: date(raw.date),
-    description: text(raw.description, MAX_TEXT.description),
-    category: optText(raw.category, MAX_TEXT.category),
+    description: text(raw.description, who),
+    category: optText(raw.category, who),
   };
   const type = oneOf<TransactionType>(TRANSACTION_TYPES, raw.type);
   if (type === 'TRANSFER') {
@@ -149,10 +167,12 @@ function parseScheduled(raw: unknown): ScheduledExpense {
   if (!isObj(raw)) throw new Invalid(DAMAGED);
   const endDate = optStr(raw.endDate);
   const settledThrough = optStr(raw.settledThrough);
+  const who = labelOf('scheduled', raw.description);
+  const amount = money(raw.amount, who);
   return ScheduledExpense.create({
     id: id(raw.id),
-    description: text(raw.description, MAX_TEXT.description),
-    amount: money(raw.amount),
+    description: text(raw.description, who),
+    amount,
     accountId: id(raw.accountId),
     frequency: oneOf<Frequency>(FREQUENCIES, raw.frequency),
     startDate: date(raw.startDate),
