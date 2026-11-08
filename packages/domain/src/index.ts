@@ -10,3 +10,4 @@ export * from './scheduled/recurrence';
 export * from './scheduled/scheduled-expense';
 export * from './projection/projection-engine';
 export * from './ports/repositories';
+export * from './spending';
