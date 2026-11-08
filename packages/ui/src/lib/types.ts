@@ -118,5 +118,7 @@ export interface SpendingView {
   total: string;
   /** Total del mes de comparación; null si ese mes no tuvo gastos. */
   previousTotal: string | null;
+  /** total - previousTotal (puede ser negativo); null si el mes anterior no tuvo gastos. */
+  totalDelta: string | null;
   rows: SpendingRowView[];
 }

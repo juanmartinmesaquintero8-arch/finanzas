@@ -14,6 +14,11 @@ export function formatMoney(value: bigint | string): string {
   return `${n < 0n ? '-' : ''}$ ${group(abs.toString())}`;
 }
 
+/** `$2.450.000` (sin espacio), para frases como "Gastaste $2.450.000". */
+export function formatMoneyCompact(value: bigint | string): string {
+  return formatMoney(value).replace('$ ', '$');
+}
+
 export function formatMoneyView(m: MoneyView): string {
   return formatMoney(m.amount);
 }
@@ -73,6 +78,17 @@ export function formatDayHeading(day: string, now: Date = new Date()): string {
   const { y, m, d, dow } = parts(key);
   const base = `${WEEKDAYS[dow]} ${d} de ${MONTHS[m - 1]}`;
   return y === parts(today).y ? base : `${base} de ${y}`;
+}
+
+/** Nombre del mes en minúsculas: '2026-11' -> 'noviembre'. */
+export function monthName(month: string): string {
+  return MONTHS[Number(month.slice(5, 7)) - 1] ?? '';
+}
+
+/** 'Noviembre 2026'. */
+export function formatMonthTitle(month: string): string {
+  const name = monthName(month);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${month.slice(0, 4)}`;
 }
 
 /** Fecha corta: "5 mar 2026". */

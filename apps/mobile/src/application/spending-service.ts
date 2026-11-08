@@ -72,6 +72,7 @@ export class SpendingService {
       currentMonth: current,
       total: breakdown.total.toString(),
       previousTotal: breakdown.previousTotal?.toString() ?? null,
+      totalDelta: breakdown.previousTotal === undefined ? null : (breakdown.total - breakdown.previousTotal).toString(),
       rows: breakdown.rows.map((r) => ({
         key: r.key,
         label: r.label,

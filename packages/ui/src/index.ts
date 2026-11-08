@@ -25,3 +25,5 @@ export { ScheduledList } from './components/ScheduledList';
 export { ScheduledScreen } from './components/ScheduledScreen';
 export { TransactionTypeChips, TRANSACTION_TYPE_OPTIONS } from './components/TransactionTypeChips';
 export { UpcomingCommitments } from './components/UpcomingCommitments';
+export { SpendingBreakdown } from './components/SpendingBreakdown';
+export { SpendingHomeCard } from './components/SpendingHomeCard';
