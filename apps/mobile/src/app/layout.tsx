@@ -32,6 +32,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="es" className={inter.variable}>
       <head>
+        {/* La política de seguridad (CSP, src/pwa/csp.ts) no se pinta aquí: scripts/postbuild.mjs la
+            escribe como primer elemento del <head> de cada página compilada, con la huella de sus
+            scripts en línea. Si React la pintara, al arrancar no reconocería esa versión y
+            agregaría una segunda copia. En modo desarrollo no se aplica (Next necesita eval). */}
         <link rel="manifest" href={`${BASE_PATH}/manifest.webmanifest`} />
         <link rel="icon" type="image/png" sizes="192x192" href={`${BASE_PATH}/icons/icon-192.png`} />
         <link rel="apple-touch-icon" href={`${BASE_PATH}/icons/icon-192.png`} />

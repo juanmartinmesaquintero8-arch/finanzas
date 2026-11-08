@@ -41,3 +41,43 @@ export function buildServiceWorkerSource(template, { basePath, version, urls }) 
     .replaceAll('__BASE__', basePath)
     .replace('__PRECACHE__', JSON.stringify(urls));
 }
+
+const CSP_META = /<meta http-equiv="Content-Security-Policy"[^>]*>/gi;
+const INLINE_SCRIPT = /<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+const encodeAttr = (s) => s.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll("'", '&#x27;');
+
+/**
+ * Escribe la política de seguridad (CSP) en una página ya compilada, como primer elemento del
+ * <head> (después del charset), para que cubra todos los estilos y scripts que vienen detrás.
+ *
+ * Next deja scripts en línea en cada página (los datos para arrancar React). En vez de permitir
+ * cualquier script en línea ('unsafe-inline'), se autoriza solo la huella (sha256) de los que trae
+ * esa página: un script inyectado por un atacante tendría otra huella y el navegador lo bloquearía.
+ * Un <meta> en un sitio estático no admite nonces, por eso se hace al compilar. Se escribe aquí y no
+ * desde React porque, si React la pintara, al arrancar no reconocería la versión con huellas y
+ * agregaría una segunda copia.
+ */
+export function injectContentSecurityPolicy(html, policy) {
+  const page = html.replace(CSP_META, '');
+  const hashes = new Set();
+  for (const [, body] of page.matchAll(INLINE_SCRIPT)) {
+    if (body.trim()) hashes.add(`'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`);
+  }
+  let hasScriptSrc = false;
+  const finalPolicy = policy
+    .split(';')
+    .map((part) => {
+      const [name, ...sources] = part.trim().split(/\s+/);
+      if (name !== 'script-src') return part.trim();
+      hasScriptSrc = true;
+      return [name, ...new Set([...sources, ...hashes])].join(' ');
+    })
+    .join('; ');
+  if (!hasScriptSrc) throw new Error('La política Content-Security-Policy no tiene script-src.');
+
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${encodeAttr(finalPolicy)}"/>`;
+  const anchor = /<meta charSet="[^"]*"\s*\/?>/i.exec(page) ?? /<head(\s[^>]*)?>/i.exec(page);
+  if (!anchor) throw new Error('La página no tiene <head>: no se puede escribir la CSP.');
+  const at = anchor.index + anchor[0].length;
+  return page.slice(0, at) + meta + page.slice(at);
+}

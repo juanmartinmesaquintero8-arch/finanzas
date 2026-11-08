@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import vm from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildServiceWorkerSource, collectPrecache, precacheUrl } from './pwa-lib.mjs';
+import { createHash } from 'node:crypto';
+import { injectContentSecurityPolicy, buildServiceWorkerSource, collectPrecache, precacheUrl } from './pwa-lib.mjs';
 
 let dir;
 const put = (rel, content = rel) => {
@@ -156,5 +157,50 @@ describe('buildServiceWorkerSource', () => {
       sw.listeners.fetch({ request: request('/otra-app/a.js'), respondWith: respond });
       expect(respond).not.toHaveBeenCalled();
     });
+  });
+});
+describe('injectContentSecurityPolicy', () => {
+  const sha = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+  const POLICY = "default-src 'self'; script-src 'self'; object-src 'none'";
+  const metaOf = (html) => /<meta http-equiv="Content-Security-Policy" content="([^"]*)"\/>/.exec(html);
+  const policyOf = (html) => metaOf(html)[1].replaceAll('&#x27;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&');
+  const page = (head, body) => `<!DOCTYPE html><html lang="es"><head><meta charSet="utf-8"/>${head}</head><body>${body}</body></html>`;
+
+  it('pone la política justo después del charset, antes de cualquier estilo o script', () => {
+    const html = page('<link rel="stylesheet" href="/finanzas/a.css"/><script src="/finanzas/a.js" async=""></script>', '');
+    const out = injectContentSecurityPolicy(html, POLICY);
+    expect(out.startsWith('<!DOCTYPE html><html lang="es"><head><meta charSet="utf-8"/><meta http-equiv="Content-Security-Policy" content="')).toBe(true);
+    expect(policyOf(out)).toBe(POLICY);
+    expect(out.replace(metaOf(out)[0], '')).toBe(html);
+  });
+
+  it('autoriza por su huella (hash) cada script en línea de la página, sin repetir, y nada más', () => {
+    const a = '(self.__next_f=self.__next_f||[]).push([0])';
+    const b = 'self.__next_f.push([1,"<b>&amp;</b> \\"x\\""])';
+    const html = page('<script src="/x.js"></script>', `<script>${a}</script><script>${b}</script><script>${a}</script>`);
+    expect(policyOf(injectContentSecurityPolicy(html, POLICY))).toBe(
+      `default-src 'self'; script-src 'self' ${sha(a)} ${sha(b)}; object-src 'none'`,
+    );
+  });
+
+  it('aplicarlo dos veces da lo mismo (reemplaza la política anterior)', () => {
+    const html = page('', '<script>go()</script>');
+    const once = injectContentSecurityPolicy(html, POLICY);
+    expect(injectContentSecurityPolicy(once, POLICY)).toBe(once);
+  });
+
+  it('sin charset, la pone como primer elemento del <head>', () => {
+    const out = injectContentSecurityPolicy('<html><head><title>x</title></head></html>', POLICY);
+    expect(out.startsWith('<html><head><meta http-equiv="Content-Security-Policy"')).toBe(true);
+  });
+
+  it('falla si la página no tiene <head> o la política no tiene script-src', () => {
+    expect(() => injectContentSecurityPolicy('<html><body></body></html>', POLICY)).toThrow(/<head>/);
+    expect(() => injectContentSecurityPolicy(page('', ''), "default-src 'self'")).toThrow(/script-src/);
+  });
+
+  it("nunca agrega 'unsafe-inline' ni 'unsafe-eval' a script-src", () => {
+    const out = policyOf(injectContentSecurityPolicy(page('', '<script>x()</script>'), POLICY));
+    expect(out).not.toMatch(/unsafe-(inline|eval)/);
   });
 });
