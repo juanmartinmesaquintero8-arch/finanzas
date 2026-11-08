@@ -115,5 +115,5 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 
 /** Cliente por defecto (servidor y Server Actions). */
 export function getApiClient(): ApiClient {
-  return createApiClient({ baseUrl: process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001' });
+  return createApiClient({ baseUrl: process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:3001' });
 }

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3100",
+    "dev": "next dev -p 3100 -H 127.0.0.1",
     "build": "next build && node scripts/postbuild.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "test": "vitest run",
