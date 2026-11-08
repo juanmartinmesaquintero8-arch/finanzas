@@ -59,3 +59,9 @@ jobs:
         run: pnpm exec prisma migrate deploy
       - name: Pruebas
         run: pnpm -r --workspace-concurrency=1 test
+      # Puerta contra una política de seguridad (CSP) rota: el service worker reemplaza la
+      # versión buena en el celular al abrir, así que se prueba en un navegador real antes de publicar.
+      - name: Navegador para pruebas e2e
+        run: pnpm --filter @finanzas/mobile exec playwright install --with-deps chromium
+      - name: Prueba en navegador (CSP y uso sin internet)
+        run: pnpm --filter @finanzas/mobile e2e
