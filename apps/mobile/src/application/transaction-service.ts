@@ -7,7 +7,7 @@ import {
 } from '@finanzas/domain';
 import type { ActionResult, CreateTransactionInput, Transaction as TransactionView, TransactionPage } from '@finanzas/ui';
 import { decodeCursor, encodeCursor } from './cursor';
-import { notFound, parseMoney, writeAction, type ServiceContext } from './support';
+import { assertTextLength, notFound, parseMoney, writeAction, type ServiceContext } from './support';
 import { toTransactionView } from './views';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -15,6 +15,8 @@ const MAX_PAGE_SIZE = 100;
 
 /** Traduce la entrada del formulario a la Factory, exigiendo las cuentas que pide cada tipo. */
 function toFactoryInput(id: string, date: Date, input: CreateTransactionInput): FactoryInput {
+  assertTextLength('description', input.description);
+  assertTextLength('category', input.category);
   const common = { id, amount: parseMoney(input.amount), date, description: input.description, category: input.category };
   if (input.type === 'TRANSFER') {
     assertDomain(!!input.fromAccountId && !!input.toAccountId, 'La transferencia requiere cuenta de origen y de destino');

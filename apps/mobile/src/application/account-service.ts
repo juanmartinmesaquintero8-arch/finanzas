@@ -1,6 +1,6 @@
 import { Account } from '@finanzas/domain';
 import type { ActionResult, Account as AccountView, CreateAccountInput, UpdateAccountInput } from '@finanzas/ui';
-import { AppError, notFound, parseMoney, writeAction, type ServiceContext } from './support';
+import { AppError, assertTextLength, notFound, parseMoney, writeAction, type ServiceContext } from './support';
 import { toAccountView } from './views';
 
 export class AccountService {
@@ -11,21 +11,23 @@ export class AccountService {
   }
 
   create(input: CreateAccountInput): Promise<ActionResult> {
-    return writeAction(this.ctx, () =>
-      this.ctx.accounts.save(
+    return writeAction(this.ctx, async () => {
+      assertTextLength('name', input.name);
+      await this.ctx.accounts.save(
         Account.create({
           id: this.ctx.newId(),
           name: input.name,
           type: input.type,
           initialBalance: parseMoney(input.initialBalance || '0'),
         }),
-      ),
-    );
+      );
+    });
   }
 
   update(id: string, input: UpdateAccountInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       if (!(await this.ctx.accounts.findById(id))) throw notFound('esa cuenta');
+      assertTextLength('name', input.name);
       await this.ctx.accounts.save(
         Account.create({ id, name: input.name, type: input.type, initialBalance: parseMoney(input.initialBalance || '0') }),
       );

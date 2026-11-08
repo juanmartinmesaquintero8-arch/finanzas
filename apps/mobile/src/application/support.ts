@@ -11,6 +11,7 @@ import {
 import type { ActionResult } from '@finanzas/ui';
 import type { IdbLedgerStore } from '@/data/idb-ledger-store';
 import type { ChangeBus } from './change-bus';
+import { MAX_TEXT, isInt64 } from './limits';
 
 export const CURRENCY = 'COP';
 
@@ -40,7 +41,20 @@ const INTEGER = /^-?\d+$/;
 export function parseMoney(raw: string): Money {
   const text = String(raw).trim();
   if (!INTEGER.test(text)) throw new InvalidMoneyError(`El monto debe ser un número entero: ${text}`);
-  return Money.of(BigInt(text), CURRENCY);
+  const value = BigInt(text);
+  if (!isInt64(value)) throw new InvalidMoneyError('El monto es demasiado grande.');
+  return Money.of(value, CURRENCY);
+}
+
+const TEXT_MESSAGES = {
+  name: 'El nombre no puede superar 80 caracteres.',
+  description: 'La descripción no puede superar 160 caracteres.',
+  category: 'La categoría no puede superar 60 caracteres.',
+} as const;
+
+/** Frena textos más largos que lo que la copia de seguridad garantiza recuperar. Mide el texto ya recortado. */
+export function assertTextLength(field: keyof typeof TEXT_MESSAGES, value: string | undefined | null): void {
+  if (typeof value === 'string' && value.trim().length > MAX_TEXT[field]) throw new DomainValidationError(TEXT_MESSAGES[field]);
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;

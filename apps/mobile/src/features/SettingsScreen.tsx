@@ -2,7 +2,7 @@
 
 import { formatShortDate, todayISO, ui } from '@finanzas/ui';
 import { useState, type ChangeEvent } from 'react';
-import { checkBackupFileSize, parseBackup, type BackupSummary } from '@/application/backup';
+import { UNUSABLE_PREFIX, checkBackupFileSize, parseBackup, type BackupSummary } from '@/application/backup';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
 import { InstallPrompt } from '@/pwa/install';
 import { useServices } from '@/state/services-provider';
@@ -28,6 +28,13 @@ const readText = (file: File): Promise<string> =>
         reader.readAsText(file);
       });
 
+/** Aviso cuando la copia se entregó pero no se podría recuperar: nombra el dato y dice qué hacer. */
+function unrecoverableNotice(problem: string): string {
+  const detail = problem.startsWith(UNUSABLE_PREFIX) ? problem.slice(UNUSABLE_PREFIX.length) : problem;
+  const capitalized = detail.charAt(0).toUpperCase() + detail.slice(1);
+  return `Hicimos la copia, pero no se podría recuperar. ${capitalized} Corrige ese dato y vuelve a hacer la copia.`;
+}
+
 const DELIVERY_TEXT: Record<DeliveryResult, { kind: 'ok' | 'error'; text: string }> = {
   shared: { kind: 'ok', text: 'Tu copia está lista. Guárdala en un lugar seguro, como tu correo o Google Drive.' },
   downloaded: {
@@ -50,6 +57,10 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
     try {
       const backup = await services.backup.create();
       const result = await deliver(backup);
+      if (backup.problem) {
+        setNotice({ kind: 'error', text: unrecoverableNotice(backup.problem) });
+        return;
+      }
       if (result !== 'cancelled') await services.backup.markDone(backup.exportedAt);
       setNotice(DELIVERY_TEXT[result]);
     } catch {

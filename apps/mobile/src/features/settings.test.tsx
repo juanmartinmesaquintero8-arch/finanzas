@@ -1,8 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { deleteDB } from 'idb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppServices } from '@/application/create-services';
-import { makeServices, renderWithServices } from '@/test-utils';
+import { createServices, type AppServices } from '@/application/create-services';
+import { openFinanzasDb } from '@/data/database';
+import { NOW, makeServices, renderWithServices } from '@/test-utils';
 import { SettingsScreen } from './SettingsScreen';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/ajustes/', useSearchParams: () => new URLSearchParams() }));
@@ -165,11 +167,35 @@ describe('Ajustes: archivo demasiado grande', () => {
     await renderWithServices(<SettingsScreen deliver={vi.fn()} />, services);
     const valid = JSON.stringify({ version: 1, exportedAt: '2026-03-10T15:00:00.000Z', accounts: [], transactions: [], scheduledExpenses: [] });
     const file = fileOf(valid);
-    Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 });
+    Object.defineProperty(file, 'size', { value: 50 * 1024 * 1024 + 1 });
     const read = vi.spyOn(FileReader.prototype, 'readAsText');
     await userEvent.upload(await screen.findByLabelText('Recuperar copia'), file);
-    expect(await screen.findByRole('alert')).toHaveTextContent('El archivo es demasiado grande para ser una copia de Mis Finanzas (máximo 10 MB).');
+    expect(await screen.findByRole('alert')).toHaveTextContent('El archivo pesa más de 50 MB, el máximo que la app puede recuperar.');
     expect(read).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /sí, recuperar/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('Ajustes: la copia debe poder recuperarse', () => {
+  it('si un dato ya guardado no se podría recuperar, entrega el archivo, no marca la copia y avisa', async () => {
+    const name = `set-${Math.random()}`;
+    const db = await openFinanzasDb(name);
+    try {
+      const own = createServices({ db, now: () => NOW, newId: () => 'id-1' });
+      // Se siembra un monto fuera de rango directamente en la base.
+      await db.put('accounts', { id: 'a1', name: 'Enorme', type: 'BANK', initialBalance: '9223372036854775808', currency: 'COP' });
+      const deliver = vi.fn().mockResolvedValue('shared');
+      await renderWithServices(<SettingsScreen deliver={deliver} />, own);
+      await userEvent.click(await screen.findByRole('button', { name: 'Hacer copia de seguridad' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Hicimos la copia, pero no se podría recuperar. La cuenta «Enorme» tiene un monto demasiado grande. Corrige ese dato y vuelve a hacer la copia.',
+      );
+      expect(deliver).toHaveBeenCalledTimes(1);
+      expect(await own.backup.lastBackupAt()).toBeNull();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    } finally {
+      db.close();
+      await deleteDB(name);
+    }
   });
 });
