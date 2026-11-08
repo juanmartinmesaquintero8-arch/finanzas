@@ -14,7 +14,7 @@
     "@finanzas/domain": "workspace:*",
     "@finanzas/ui": "workspace:*",
     "idb": "8.0.3",
-    "next": "15.5.4",
+    "next": "15.5.29",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
@@ -29,7 +29,7 @@
     "@vitejs/plugin-react": "5.0.2",
     "fake-indexeddb": "6.2.2",
     "jsdom": "26.1.0",
-    "sharp": "0.34.4",
+    "sharp": "0.35.5",
     "typescript": "5.7.3",
     "vitest": "3.2.4"
   }
