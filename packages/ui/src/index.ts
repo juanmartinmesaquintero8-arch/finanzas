@@ -27,3 +27,5 @@ export { TransactionTypeChips, TRANSACTION_TYPE_OPTIONS } from './components/Tra
 export { UpcomingCommitments } from './components/UpcomingCommitments';
 export { SpendingBreakdown } from './components/SpendingBreakdown';
 export { SpendingHomeCard } from './components/SpendingHomeCard';
+export { HistoryViewSwitch } from './components/HistoryViewSwitch';
+export { ActiveFilters, type ActiveFilter } from './components/ActiveFilters';

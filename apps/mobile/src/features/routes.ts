@@ -7,9 +7,11 @@ export const routes = {
   homeHorizon: (h: string) => `/?h=${h}`,
   history: '/historial',
   historyByAccount: (accountId?: string) => (accountId ? `/historial?cuenta=${accountId}` : '/historial'),
-  /** Historial de un mes ('YYYY-MM') y, opcionalmente, de una categoría (clave normalizada). */
-  historyFiltered: (mes: string, categoria?: string) =>
-    `/historial?mes=${mes}${categoria ? `&categoria=${encodeURIComponent(categoria)}` : ''}`,
+  /** Historial filtrado por mes ('YYYY-MM') y/o categoría (clave normalizada). */
+  historyFiltered: ({ mes, categoria }: { mes?: string; categoria?: string }) => {
+    const query = [mes && `mes=${mes}`, categoria && `categoria=${encodeURIComponent(categoria)}`].filter(Boolean).join('&');
+    return query ? `/historial?${query}` : '/historial';
+  },
   /** Vista "En qué gasto"; sin mes es el mes actual. */
   spending: (mes?: string) => (mes ? `/historial?vista=gasto&mes=${mes}` : '/historial?vista=gasto'),
   add: '/agregar',
