@@ -14,7 +14,7 @@
     "@finanzas/domain": "workspace:*",
     "@finanzas/ui": "workspace:*",
     "idb": "8.0.3",
-    "next": "15.5.4",
+    "next": "15.5.29",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
