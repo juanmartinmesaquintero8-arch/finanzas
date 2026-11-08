@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
 /** Lo que el navegador reporta como bloqueado por la política de seguridad (CSP). */
 interface Violation {
@@ -12,11 +12,15 @@ declare global {
   }
 }
 
-/** Escucha las violaciones de CSP desde antes de que cargue la página (y en cada recarga). */
-async function watchViolations(page: Page): Promise<string[]> {
+/**
+ * Escucha las violaciones de CSP desde antes de que cargue la página (y en cada recarga), y también
+ * todo console.error: un error al arrancar React (por ejemplo por el <meta> que agrega el postbuild)
+ * debe hacer fallar la prueba. `isAllowed` es la única excepción y cada caso debe justificarse.
+ */
+async function watchViolations(page: Page, isAllowed: (msg: ConsoleMessage) => boolean = () => false): Promise<string[]> {
   const consoleErrors: string[] = [];
   page.on('console', (msg) => {
-    if (/content security policy/i.test(msg.text())) consoleErrors.push(msg.text());
+    if (msg.type() === 'error' && !isAllowed(msg)) consoleErrors.push(msg.text());
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
   await page.addInitScript(() => {
@@ -29,8 +33,11 @@ async function watchViolations(page: Page): Promise<string[]> {
 }
 
 async function expectNoViolations(page: Page, consoleErrors: string[]): Promise<void> {
-  // Un respiro para que lleguen los avisos asíncronos (fuentes, manifest, service worker).
-  await page.waitForTimeout(500);
+  // Los avisos llegan al pedir cada recurso: se espera a que terminen las descargas y las fuentes.
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
   expect(await page.evaluate(() => window.__cspViolations)).toEqual([]);
   expect(consoleErrors).toEqual([]);
 }
@@ -92,3 +99,14 @@ for (const route of ROUTES) {
     await expectNoViolations(page, consoleErrors);
   });
 }
+
+test('una dirección que no existe muestra la página 404, sin violaciones de CSP', async ({ page, baseURL }) => {
+  const missingUrl = new URL('esta-pagina-no-existe/', baseURL).href;
+  // Permitido solo esto: Chromium siempre avisa en consola cuando el propio documento responde 404.
+  const consoleErrors = await watchViolations(page, (msg) => msg.location().url === missingUrl && /status of 404/.test(msg.text()));
+  const response = await page.goto(missingUrl);
+  expect(response?.status()).toBe(404);
+  await expect(page.locator('head meta[http-equiv="Content-Security-Policy"]')).toHaveCount(1);
+  await expect(page.getByRole('heading', { level: 1, name: '404' })).toBeVisible();
+  await expectNoViolations(page, consoleErrors);
+});

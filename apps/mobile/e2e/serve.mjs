@@ -60,7 +60,9 @@ const server = createServer((req, res) => {
   }
   const file = resolveFile(url.pathname);
   if (!file) {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('No encontrado');
+    // Igual que GitHub Pages: lo que no existe responde 404 con la página 404.html del sitio.
+    res.writeHead(404, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store' });
+    createReadStream(join(root, '404.html')).pipe(res);
     return;
   }
   res.writeHead(200, {

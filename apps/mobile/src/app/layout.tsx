@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="es" className={inter.variable}>
       <head>
-        {/* La política de seguridad (CSP, src/pwa/csp.ts) no se pinta aquí: scripts/postbuild.mjs la
+        {/* La política de seguridad (CSP, src/pwa/csp-policy.mjs) no se pinta aquí: scripts/postbuild.mjs la
             escribe como primer elemento del <head> de cada página compilada, con la huella de sus
             scripts en línea. Si React la pintara, al arrancar no reconocería esa versión y
             agregaría una segunda copia. En modo desarrollo no se aplica (Next necesita eval). */}

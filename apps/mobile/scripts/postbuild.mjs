@@ -2,8 +2,8 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-// Node 24 entiende TypeScript simple: la política vive en un solo lugar (src/pwa/csp.ts).
-import { CONTENT_SECURITY_POLICY } from '../src/pwa/csp.ts';
+// La política vive en un solo lugar (src/pwa/csp-policy.mjs; la app la usa vía csp.ts).
+import { CONTENT_SECURITY_POLICY } from '../src/pwa/csp-policy.mjs';
 import { buildServiceWorkerSource, collectPrecache, injectContentSecurityPolicy } from './pwa-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
