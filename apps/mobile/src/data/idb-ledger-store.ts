@@ -1,6 +1,6 @@
 import type { Account, ScheduledExpense, Transaction } from '@finanzas/domain';
 import type { IDBPTransaction, StoreNames } from 'idb';
-import type { FinanzasDb, FinanzasSchema } from './database';
+import type { FinanzasDb, FinanzasSchema, StoredTransaction } from './database';
 import {
   toAccount,
   toScheduled,
@@ -15,6 +15,9 @@ export interface LedgerSnapshot {
   transactions: Transaction[];
   scheduledExpenses: ScheduledExpense[];
 }
+
+/** Filas por lectura al recorrer el historial para las gráficas. */
+const SCAN_BATCH = 5000;
 
 const DATA_STORES = ['accounts', 'transactions', 'scheduledExpenses'] as const;
 
@@ -79,6 +82,38 @@ export class IdbLedgerStore {
       transactions: transactions.map(toTransaction),
       scheduledExpenses: scheduledExpenses.map(toScheduled),
     };
+  }
+
+  /**
+   * Recorre los movimientos con fecha entre `from` y `upper` (claves ISO; basta un prefijo como '2026-02')
+   * por lotes de `size`, sobre el índice por fecha y sin crear entidades. Cada lote se entrega a
+   * `onBatch`, que puede ceder el hilo antes de pedir el siguiente.
+   */
+  async scanTransactionsByDate(
+    from: string,
+    upper: string,
+    onBatch: (rows: StoredTransaction[]) => void | Promise<void>,
+    size = SCAN_BATCH,
+  ): Promise<void> {
+    let range = IDBKeyRange.bound(from, upper);
+    for (;;) {
+      const rows = await this.db.getAllFromIndex('transactions', 'by-date', range, size);
+      if (rows.length < size) {
+        if (rows.length > 0) await onBatch(rows);
+        return;
+      }
+      // Lote lleno: el último instante puede continuar en el siguiente, así que se deja para después.
+      const lastDate = rows[rows.length - 1]!.date;
+      const complete = rows.filter((r) => r.date !== lastDate);
+      if (complete.length > 0) {
+        await onBatch(complete);
+        range = IDBKeyRange.bound(lastDate, upper);
+      } else {
+        // Todo el lote es un mismo instante: se lee completo y se sigue después de él.
+        await onBatch(await this.db.getAllFromIndex('transactions', 'by-date', IDBKeyRange.only(lastDate)));
+        range = IDBKeyRange.bound(lastDate, upper, true);
+      }
+    }
   }
 
   /** Reemplaza todos los datos por los recibidos (restaurar copia), en una sola transacción. */

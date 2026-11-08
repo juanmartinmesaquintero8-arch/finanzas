@@ -1,8 +1,9 @@
-import type {
-  Transaction,
-  TransactionPageQuery,
-  TransactionQuery,
-  TransactionRepository,
+import {
+  normalizeCategory,
+  type Transaction,
+  type TransactionPageQuery,
+  type TransactionQuery,
+  type TransactionRepository,
 } from '@finanzas/domain';
 import type { FinanzasDb, StoredTransaction } from './database';
 import { accountDateKey, accountDateRange, toStoredTransaction, toTransaction } from './mappers';
@@ -39,14 +40,20 @@ export class IdbTransactionRepository implements TransactionRepository {
    * Página keyset (sin saltar filas): recorre el índice por fecha de más nuevo a más viejo
    * y, dentro de un mismo instante, ordena por id ascendente (igual que el contrato del puerto).
    */
-  async findPage({ accountId, limit, after }: TransactionPageQuery): Promise<Transaction[]> {
+  async findPage({ accountId, limit, after, month, categoryKey }: TransactionPageQuery): Promise<Transaction[]> {
     const afterDate = after?.date.toISOString();
+    // Mes: se acota el índice por prefijo ISO ('2026-02' ... '2026-02\uffff'); el cursor solo puede bajar el tope.
+    const monthUpper = month ? `${month}￿` : undefined;
+    const upperDate = afterDate !== undefined && (monthUpper === undefined || afterDate < monthUpper) ? afterDate : monthUpper;
+    if (month && upperDate! < month) return [];
     let range: IDBKeyRange | undefined;
     if (accountId) {
       const { lower, upper } = accountDateRange(accountId);
-      range = IDBKeyRange.bound(lower, afterDate ? accountDateKey(accountId, afterDate) : upper);
-    } else if (afterDate) {
-      range = IDBKeyRange.upperBound(afterDate);
+      range = IDBKeyRange.bound(month ? accountDateKey(accountId, month) : lower, upperDate ? accountDateKey(accountId, upperDate) : upper);
+    } else if (month) {
+      range = IDBKeyRange.bound(month, upperDate!);
+    } else if (upperDate) {
+      range = IDBKeyRange.upperBound(upperDate);
     }
 
     const tx = this.db.transaction('transactions', 'readonly');
@@ -62,6 +69,11 @@ export class IdbTransactionRepository implements TransactionRepository {
     let cursor = await index.openCursor(range, 'prev');
     while (cursor) {
       const row = cursor.value;
+      // Por categoría solo se listan gastos (lo mismo que suma la gráfica).
+      if (categoryKey !== undefined && (row.type !== 'EXPENSE' || normalizeCategory(row.category).key !== categoryKey)) {
+        cursor = await cursor.continue();
+        continue;
+      }
       // Ya entregado en la página anterior: mismo instante y id menor o igual al del cursor.
       const seen = after && row.date === afterDate && row.id <= after.id;
       if (!seen) {

@@ -25,6 +25,10 @@ export interface TransactionPageQuery {
   accountId?: string;
   limit: number;
   after?: TransactionCursor;
+  /** Solo movimientos de ese mes ('YYYY-MM', sobre la fecha ISO). */
+  month?: string;
+  /** Solo gastos de esa categoría (clave ya normalizada; ver normalizeCategory). */
+  categoryKey?: string;
 }
 
 export interface TransactionRepository {

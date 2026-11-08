@@ -88,3 +88,35 @@ export interface CreateScheduledExpenseInput {
   startDate: string;
   endDate?: string;
 }
+
+/** Una fila de "En qué gasto": montos como texto de entero (bigint), porcentajes solo para mostrar. */
+export interface SpendingRowView {
+  key: string;
+  label: string;
+  kind: 'category' | 'uncategorized' | 'other';
+  amount: string;
+  percent: number;
+  /** Largo de la barra, 0 a 100, relativo a la mayor fila. */
+  barPct: number;
+  /** Posición de la marca del mes anterior sobre la misma escala; null si no hay. */
+  previousMarkPct: number | null;
+  /** Gasto de esta fila menos el del mes de comparación (puede ser negativo); null sin comparación. */
+  delta: string | null;
+  isNew: boolean;
+}
+
+export interface SpendingView {
+  /** 'YYYY-MM' */
+  month: string;
+  previousMonth: string;
+  isCurrent: boolean;
+  /** En el mes en curso: hasta qué día del mes se comparó; null en un mes cerrado. */
+  comparedUntilDay: number | null;
+  /** Primer y último mes a los que se puede navegar. */
+  oldestMonth: string;
+  currentMonth: string;
+  total: string;
+  /** Total del mes de comparación; null si ese mes no tuvo gastos. */
+  previousTotal: string | null;
+  rows: SpendingRowView[];
+}
