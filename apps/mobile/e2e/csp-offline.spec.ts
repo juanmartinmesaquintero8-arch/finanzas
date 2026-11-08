@@ -115,7 +115,7 @@ for (const route of ROUTES) {
 test('sin conexión, "En qué gasto" vuelve a abrir y muestra el estado vacío', async ({ page, context }) => {
   const consoleErrors = await watchViolations(page);
   await page.goto('historial/?vista=gasto');
-  await expect(page.getByRole('heading', { level: 2, name: /20dd$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /\d{4}$/ })).toBeVisible();
   await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 
