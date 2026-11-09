@@ -18,13 +18,15 @@ type Pending =
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** «2 cuentas, 3 movimientos y 1 gasto programado»; los ingresos programados solo se nombran si la copia los trae. */
-function restoreContents(s: { accounts: number; transactions: number; scheduledExpenses: number; scheduledIncomes: number }): string {
+/** «2 cuentas, 3 movimientos y 1 gasto programado»; ingresos y tarjetas solo se nombran si la copia los trae. */
+function restoreContents(s: Omit<BackupSummary, 'exportedAt'>): string {
   const parts = [
     plural(s.accounts, 'cuenta', 'cuentas'),
     plural(s.transactions, 'movimiento', 'movimientos'),
     plural(s.scheduledExpenses, 'gasto programado', 'gastos programados'),
     ...(s.scheduledIncomes > 0 ? [plural(s.scheduledIncomes, 'ingreso programado', 'ingresos programados')] : []),
+    ...(s.creditCards > 0 ? [plural(s.creditCards, 'tarjeta', 'tarjetas')] : []),
+    ...(s.cardPurchases > 0 ? [plural(s.cardPurchases, 'compra con tarjeta', 'compras con tarjeta')] : []),
   ];
   return `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`;
 }

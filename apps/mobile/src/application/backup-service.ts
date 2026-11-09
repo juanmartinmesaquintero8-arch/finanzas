@@ -1,5 +1,5 @@
 import type { ActionResult } from '@finanzas/ui';
-import type { LedgerSnapshot } from '@/data/idb-ledger-store';
+import type { LedgerWrite } from '@/data/idb-ledger-store';
 import { backupFileName, checkBackupFileSize, isBackupReminderDue, parseBackup, serializeBackup } from './backup';
 import { writeAction, type ServiceContext } from './support';
 
@@ -42,7 +42,7 @@ export class BackupService {
   }
 
   /** Reemplaza TODOS los datos por los de la copia (ya validada con `parseBackup`). */
-  restore(snapshot: LedgerSnapshot): Promise<ActionResult> {
+  restore(snapshot: LedgerWrite): Promise<ActionResult> {
     return writeAction(this.ctx, () => this.ctx.ledger.replaceAll(snapshot));
   }
 }

@@ -54,8 +54,8 @@ async function seedBasics(svc: AppServices) {
 }
 
 describe('copia v2: ingresos programados', () => {
-  it('la versión del formato es 2 y el tope de ingresos es 2.000', () => {
-    expect(BACKUP_VERSION).toBe(2);
+  it('la versión del formato es 3 y el tope de ingresos es 2.000', () => {
+    expect(BACKUP_VERSION).toBe(3);
     expect(MAX_ITEMS.scheduledIncomes).toBe(2000);
   });
 
@@ -67,7 +67,7 @@ describe('copia v2: ingresos programados', () => {
     const { text, problem } = await s.backup.create();
     expect(problem).toBeNull();
     const file = JSON.parse(text);
-    expect(file.version).toBe(2);
+    expect(file.version).toBe(BACKUP_VERSION);
     expect(file.scheduledIncomes).toHaveLength(1);
 
     const otherName = `bk2-otro-${Math.random()}`;
@@ -118,7 +118,7 @@ describe('copia v2: ingresos programados', () => {
   });
 
   it('un archivo más nuevo sigue dando el aviso', () => {
-    expect(err(v2({ version: 3 }))).toBe(NEWER);
+    expect(err(v2({ version: BACKUP_VERSION + 1 }))).toBe(NEWER);
   });
 
   it('category es opcional en gastos e ingresos y se conserva', () => {
