@@ -99,3 +99,22 @@ describe('buildBreakdown', () => {
     expect(out.total).toBe(2n * big + 2n);
   });
 });
+
+describe('buildBreakdown con categorías que gastaron más tarde en el mes anterior', () => {
+  it('una categoría ausente del corte pero con gasto después no es "nueva"', () => {
+    const cur = month({ mercado: 100n, ocio: 50n });
+    const prev: MonthSpending = { total: 0n, byCategory: new Map() };
+    const out = buildBreakdown(cur, prev, labels(['mercado', 'ocio']), new Set(['mercado']));
+    const by = Object.fromEntries(out.rows.map((r) => [r.key, r]));
+    expect(by.mercado).toMatchObject({ isNew: false, delta: 100n, previousAmount: 0n });
+    expect(by.ocio).toMatchObject({ isNew: true, delta: 50n });
+    expect(out.previousTotal).toBe(0n);
+  });
+
+  it('Otras no es nueva si alguna de sus categorías gastó en el mes anterior', () => {
+    const cur = month({ a: 60n, b: 50n, c: 40n, d: 30n, e: 20n, f: 10n, g: 5n });
+    const prev: MonthSpending = { total: 0n, byCategory: new Map() };
+    const out = buildBreakdown(cur, prev, labels(['a', 'b', 'c', 'd', 'e', 'f', 'g']), new Set(['g']));
+    expect(out.rows.find((r) => r.kind === 'other')?.isNew).toBe(false);
+  });
+});

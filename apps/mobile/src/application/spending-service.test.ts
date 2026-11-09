@@ -178,3 +178,52 @@ describe('Historial filtrado por mes y categoría', () => {
     expect((await s.transactions.page({ month: '2026-02', category: 'educacion' })).items).toHaveLength(2);
   });
 });
+
+describe('mes en curso: solo hasta hoy', () => {
+  it('un gasto con fecha futura dentro del mes no cuenta en el total, las filas ni la lista filtrada', async () => {
+    await spend('2026-03-09', '40000', 'Mercado');
+    await spend('2026-03-20', '5000', 'Mercado'); // hoy es 10
+    const view = await s.spending.month('2026-03');
+    expect(view.total).toBe('40000');
+    expect(view.rows[0]).toMatchObject({ amount: '40000' });
+    const list = await s.transactions.page({ month: '2026-03', category: 'mercado', until: '2026-03-10' });
+    expect(list.items.map((t) => t.date.slice(0, 10))).toEqual(['2026-03-09']);
+  });
+
+  it('un mes cerrado cuenta todos sus días', async () => {
+    await spend('2026-02-27', '7000', 'Mercado');
+    await spend('2026-02-01', '3000', 'Mercado');
+    expect((await s.spending.month('2026-02')).total).toBe('10000');
+  });
+
+  it('el filtro "until" también acota el historial sin categoría', async () => {
+    await spend('2026-03-10', '1', 'A');
+    await spend('2026-03-11', '1', 'A');
+    expect((await s.transactions.page({ month: '2026-03', until: '2026-03-10' })).items).toHaveLength(1);
+  });
+});
+
+describe('comparación cuando el mes anterior gastó solo después de hoy', () => {
+  it('compara contra $0 y no marca "nuevo" a la categoría que gastó más tarde ese mes', async () => {
+    await spend('2026-02-20', '9000', 'Mercado'); // después del día 10
+    await spend('2026-03-09', '1000', 'Mercado');
+    await spend('2026-03-09', '500', 'Ocio');
+    const view = await s.spending.month('2026-03');
+    expect(view).toMatchObject({ previousTotal: '0', totalDelta: '1500' });
+    expect(view.rows.find((r) => r.label === 'Mercado')).toMatchObject({ isNew: false, delta: '1000' });
+    expect(view.rows.find((r) => r.label === 'Ocio')).toMatchObject({ isNew: true, delta: '500' });
+  });
+
+  it('si el mes anterior no gastó en ningún día no hay comparación', async () => {
+    await spend('2026-03-09', '1000', 'Mercado');
+    expect(await s.spending.month('2026-03')).toMatchObject({ previousTotal: null, totalDelta: null });
+  });
+});
+
+describe('categoría sin mes', () => {
+  it('se ignora: sin mes el historial no se filtra por categoría', async () => {
+    await spend('2026-02-01', '1', 'Mercado');
+    await spend('2026-02-02', '1', 'Ocio');
+    expect((await s.transactions.page({ category: 'mercado' })).items).toHaveLength(2);
+  });
+});

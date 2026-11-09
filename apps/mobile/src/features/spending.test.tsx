@@ -118,7 +118,7 @@ describe('Historial filtrado desde una fila', () => {
     expect(screen.queryByText('Mercado de marzo')).toBeNull();
 
     expect(screen.getByRole('link', { name: 'Quitar filtro de categoría: Mercado' })).toHaveAttribute('href', '/historial?mes=2026-02');
-    expect(screen.getByRole('link', { name: 'Quitar filtro de mes: Febrero 2026' })).toHaveAttribute('href', '/historial?categoria=mercado');
+    expect(screen.getByRole('link', { name: 'Quitar filtro de mes: Febrero 2026' })).toHaveAttribute('href', '/historial');
     expect(screen.getByRole('link', { name: 'Movimientos' })).toHaveAttribute('aria-current', 'true');
   });
 
@@ -154,5 +154,33 @@ describe('Inicio: tarjeta de gasto del mes', () => {
     await screen.findByText('Saldo Real Disponible');
     expect(screen.queryByText(/Este mes gastaste/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Ver en qué' })).toBeNull();
+  });
+});
+
+describe('correcciones de la ronda 1', () => {
+  it('?categoria= escrita a mano, sin mes, no filtra y no muestra filtros', async () => {
+    await spend('2026-02-05', '1000', 'Mercado', 'Mercado grande');
+    await spend('2026-02-06', '2000', 'Ocio', 'Cine');
+    search = 'categoria=ocio';
+    await renderWithServices(<HistoryScreen />, services);
+    expect(await screen.findByText('Mercado grande')).toBeInTheDocument();
+    expect(screen.getByText('Cine')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Quitar filtro/ })).toBeNull();
+  });
+
+  it('el mes en curso filtrado desde una fila no lista gastos futuros', async () => {
+    await spend('2026-03-09', '1000', 'Mercado', 'Ya pasó');
+    await spend('2026-03-25', '2000', 'Mercado', 'Futuro');
+    search = 'mes=2026-03&categoria=mercado';
+    await renderWithServices(<HistoryScreen />, services);
+    expect(await screen.findByText('Ya pasó')).toBeInTheDocument();
+    expect(screen.queryByText('Futuro')).toBeNull();
+  });
+
+  it('una lista filtrada vacía no enseña la clave cruda', async () => {
+    search = 'mes=2026-02&categoria=educacion';
+    await renderWithServices(<HistoryScreen />, services);
+    expect(await screen.findByRole('link', { name: 'Quitar filtro de categoría: Categoría' })).toBeInTheDocument();
+    expect(screen.queryByText('educacion')).toBeNull();
   });
 });

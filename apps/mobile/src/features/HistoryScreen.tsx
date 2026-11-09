@@ -34,7 +34,7 @@ export function HistoryScreen() {
       {spending ? (
         <SpendingScreen month={mes} />
       ) : (
-        <MovementsView mes={mes} categoria={params.get('categoria') || undefined} cuenta={params.get('cuenta') ?? undefined} />
+        <MovementsView mes={mes} categoria={mes ? params.get('categoria') || undefined : undefined} cuenta={params.get('cuenta') ?? undefined} />
       )}
     </>
   );
@@ -42,7 +42,10 @@ export function HistoryScreen() {
 
 function MovementsView({ mes, categoria, cuenta }: { mes?: string; categoria?: string; cuenta?: string }) {
   const services = useServices();
-  const filtered = mes !== undefined || categoria !== undefined;
+  const filtered = mes !== undefined;
+  // Mes en curso: solo hasta hoy, igual que la gráfica.
+  const today = services.today();
+  const until = mes === today.slice(0, 7) ? today : undefined;
   // Con un filtro de mes o categoría el filtro por cuenta se deja de lado, para no mezclar tres criterios.
   const accountId = filtered ? undefined : cuenta;
   // Se lee al abrir o al cambiar de filtro; "Cargar más" y borrar los maneja la propia lista.
@@ -50,11 +53,16 @@ function MovementsView({ mes, categoria, cuenta }: { mes?: string; categoria?: s
     async (s) => {
       const [accounts, page] = await Promise.all([
         s.accounts.list(),
-        s.transactions.page({ accountId, month: mes, category: categoria, limit: 20 }),
+        s.transactions.page({ accountId, month: mes, category: categoria, until, limit: 20 }),
       ]);
-      return { accounts, page };
+      // Con la lista vacía el nombre bonito de la categoría sale del resumen de gasto, no de la clave.
+      const label =
+        categoria && mes && page.items.length === 0
+          ? await s.spending.month(mes).then((v) => v.rows.find((r) => r.key === categoria)?.label, () => undefined)
+          : undefined;
+      return { accounts, page, label };
     },
-    [accountId, mes, categoria],
+    [accountId, mes, categoria, until],
     { live: false },
   );
 
@@ -64,12 +72,12 @@ function MovementsView({ mes, categoria, cuenta }: { mes?: string; categoria?: s
   const filters: ActiveFilter[] = [];
   if (categoria) {
     const label =
-      categoria === UNCATEGORIZED_KEY ? 'Sin categoría' : (data.page.items[0]?.category?.replace(/\s+/g, ' ').trim() ?? categoria);
+      categoria === UNCATEGORIZED_KEY ? 'Sin categoría' : (data.page.items[0]?.category?.replace(/\s+/g, ' ').trim() ?? data.label ?? 'Categoría');
     filters.push({ label, removeLabel: `Quitar filtro de categoría: ${label}`, href: routes.historyFiltered({ mes }) });
   }
   if (mes) {
     const label = formatMonthTitle(mes);
-    filters.push({ label, removeLabel: `Quitar filtro de mes: ${label}`, href: routes.historyFiltered({ categoria }) });
+    filters.push({ label, removeLabel: `Quitar filtro de mes: ${label}`, href: routes.history });
   }
 
   return (
@@ -86,7 +94,7 @@ function MovementsView({ mes, categoria, cuenta }: { mes?: string; categoria?: s
         accountId={accountId}
         editHref={routes.editTransaction}
         loadPage={({ accountId: id, cursor }) =>
-          services.transactions.page({ accountId: id, month: mes, category: categoria, cursor, limit: 20 })
+          services.transactions.page({ accountId: id, month: mes, category: categoria, until, cursor, limit: 20 })
         }
         onDelete={async (id) => {
           const res = await services.transactions.remove(id);

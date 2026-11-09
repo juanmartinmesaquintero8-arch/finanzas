@@ -40,11 +40,15 @@ export class IdbTransactionRepository implements TransactionRepository {
    * Página keyset (sin saltar filas): recorre el índice por fecha de más nuevo a más viejo
    * y, dentro de un mismo instante, ordena por id ascendente (igual que el contrato del puerto).
    */
-  async findPage({ accountId, limit, after, month, categoryKey }: TransactionPageQuery): Promise<Transaction[]> {
+  async findPage({ accountId, limit, after, month, categoryKey: requestedKey, until }: TransactionPageQuery): Promise<Transaction[]> {
     const afterDate = after?.date.toISOString();
+    // Una categoría sin mes recorrería todo el índice: se ignora.
+    const categoryKey = month ? requestedKey : undefined;
     // Mes: se acota el índice por prefijo ISO ('2026-02' ... '2026-02\uffff'); el cursor solo puede bajar el tope.
     const monthUpper = month ? `${month}￿` : undefined;
-    const upperDate = afterDate !== undefined && (monthUpper === undefined || afterDate < monthUpper) ? afterDate : monthUpper;
+    const untilUpper = until ? `${until}￿` : undefined;
+    const tops = [afterDate, monthUpper, untilUpper].filter((d): d is string => d !== undefined);
+    const upperDate = tops.length > 0 ? tops.reduce((a, b) => (a < b ? a : b)) : undefined;
     if (month && upperDate! < month) return [];
     let range: IDBKeyRange | undefined;
     if (accountId) {

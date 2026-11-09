@@ -29,6 +29,8 @@ export interface TransactionPageQuery {
   month?: string;
   /** Solo gastos de esa categoría (clave ya normalizada; ver normalizeCategory). */
   categoryKey?: string;
+  /** Hasta ese día inclusive ('YYYY-MM-DD'); sirve para no contar gastos con fecha futura. */
+  until?: string;
 }
 
 export interface TransactionRepository {

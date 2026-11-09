@@ -3,6 +3,7 @@ import {
   buildBreakdown,
   clampSpendingMonth,
   createSpendingAccumulator,
+  normalizeCategory,
   daysInMonth,
   spendingWindow,
 } from '@finanzas/domain';
@@ -47,21 +48,33 @@ export class SpendingService {
     const isCurrent = month === current;
     // Mes en curso: solo los mismos días del mes anterior (si hoy es 8, del 1 al 8; 31 de marzo contra todo febrero).
     const comparedUntilDay = isCurrent ? Number(today.slice(8, 10)) : null;
+    const todayDay = comparedUntilDay ?? Infinity;
     const lastComparedDay = comparedUntilDay === null ? Infinity : Math.min(comparedUntilDay, daysInMonth(previousMonth));
 
     const acc = createSpendingAccumulator();
+    // Categorías (y existencia) de lo que el mes anterior gastó DESPUÉS del día de corte.
+    const spentLastMonth = new Set<string>();
+    let previousHadSpending = false;
     await this.ctx.ledger.scanTransactionsByDate(previousMonth, `${month}￿`, async (rows) => {
       for (const row of rows) {
         if (row.type !== 'EXPENSE') continue;
-        if (row.date.startsWith(previousMonth) && Number(row.date.slice(8, 10)) > lastComparedDay) continue;
+        const day = Number(row.date.slice(8, 10));
+        if (row.date.startsWith(previousMonth)) {
+          previousHadSpending = true;
+          spentLastMonth.add(normalizeCategory(row.category).key);
+          if (day > lastComparedDay) continue;
+        } else if (day > todayDay) {
+          continue; // mes en curso: nada de gastos con fecha futura
+        }
         acc.add({ type: row.type, amount: BigInt(row.amount), isoDate: row.date, category: row.category });
       }
       await yieldThread();
     });
 
     const { months, labels } = acc.result();
-    const previous = months.get(previousMonth);
-    const breakdown = buildBreakdown(months.get(month) ?? { total: 0n, byCategory: new Map() }, previous && previous.total > 0n ? previous : undefined, labels);
+    // Con gasto en el mes anterior pero ninguno hasta el día de corte, se compara contra $0.
+    const previous = months.get(previousMonth) ?? (previousHadSpending ? { total: 0n, byCategory: new Map<string, bigint>() } : undefined);
+    const breakdown = buildBreakdown(months.get(month) ?? { total: 0n, byCategory: new Map() }, previous, labels, spentLastMonth);
 
     return {
       month,

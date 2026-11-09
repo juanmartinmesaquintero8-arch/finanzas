@@ -204,6 +204,10 @@
   flex: 1 0 auto;
 }
 
+.switch > a {
+  min-height: 48px;
+}
+
 /* Filtro activo en el historial, con forma visible de quitarlo. */
 .activeFilters {
   display: flex;
@@ -215,7 +219,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 14px;
   border-radius: 999px;
   border: 1.5px solid var(--primary);

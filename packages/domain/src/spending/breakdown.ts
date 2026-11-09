@@ -49,6 +49,8 @@ interface Draft {
   kind: BreakdownKind;
   amount: bigint;
   previousAmount: bigint;
+  /** Alguna de sus categorías gastó en el mes anterior completo. */
+  hadSpendingBefore: boolean;
 }
 
 /**
@@ -56,7 +58,13 @@ interface Draft {
  * propia si existe y "Otras" con el resto (máximo 7 filas). Compara cada fila con `previous`
  * (que ya viene recortado a los mismos días cuando el mes está en curso).
  */
-export function buildBreakdown(current: MonthSpending, previous: MonthSpending | undefined, labels: ReadonlyMap<string, string>): Breakdown {
+export function buildBreakdown(
+  current: MonthSpending,
+  previous: MonthSpending | undefined,
+  labels: ReadonlyMap<string, string>,
+  /** Categorías que gastaron en CUALQUIER día del mes anterior (aunque `previous` esté recortado). */
+  spentLastMonth: ReadonlySet<string> = new Set(),
+): Breakdown {
   const total = current.total;
   const prevOf = (key: string): bigint => previous?.byCategory.get(key) ?? 0n;
 
@@ -74,6 +82,7 @@ export function buildBreakdown(current: MonthSpending, previous: MonthSpending |
     kind: 'category',
     amount,
     previousAmount: prevOf(key),
+    hadSpendingBefore: spentLastMonth.has(key) || prevOf(key) > 0n,
   }));
   if (uncategorized > 0n) {
     drafts.push({
@@ -82,6 +91,7 @@ export function buildBreakdown(current: MonthSpending, previous: MonthSpending |
       kind: 'uncategorized',
       amount: uncategorized,
       previousAmount: prevOf(UNCATEGORIZED_KEY),
+      hadSpendingBefore: spentLastMonth.has(UNCATEGORIZED_KEY) || prevOf(UNCATEGORIZED_KEY) > 0n,
     });
   }
   const rest = named.slice(TOP_CATEGORIES);
@@ -92,6 +102,7 @@ export function buildBreakdown(current: MonthSpending, previous: MonthSpending |
       kind: 'other',
       amount: rest.reduce((sum, r) => sum + r.amount, 0n),
       previousAmount: rest.reduce((sum, r) => sum + prevOf(r.key), 0n),
+      hadSpendingBefore: rest.some((r) => spentLastMonth.has(r.key) || prevOf(r.key) > 0n),
     });
   }
 
@@ -108,7 +119,7 @@ export function buildBreakdown(current: MonthSpending, previous: MonthSpending |
       previousAmount: compared ? d.previousAmount : null,
       previousMarkPct: compared && d.previousAmount > 0n ? scale(d.previousAmount, max) : null,
       delta: compared ? d.amount - d.previousAmount : null,
-      isNew: compared && d.previousAmount === 0n,
+      isNew: compared && d.previousAmount === 0n && !d.hadSpendingBefore,
     };
   });
 
