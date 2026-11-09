@@ -55,3 +55,14 @@ describe('ScheduledExpense', () => {
     expect(() => ScheduledExpense.create({ ...base, endDate: d('2025-12-31') })).toThrow(DomainValidationError);
   });
 });
+
+describe('ScheduledExpense: categoría', () => {
+  it('es opcional; vacía queda sin categoría y se conserva al liquidar', () => {
+    expect(ScheduledExpense.create(base).category).toBeUndefined();
+    expect(ScheduledExpense.create({ ...base, category: '  ' }).category).toBeUndefined();
+    const se = ScheduledExpense.create({ ...base, category: ' Vivienda ' });
+    expect(se.category).toBe('Vivienda');
+    expect(se.markSettled(d('2026-11-05')).category).toBe('Vivienda');
+    expect(ScheduledExpense.create(se.toProps()).category).toBe('Vivienda');
+  });
+});

@@ -1,7 +1,8 @@
 import { Account } from '../account/account';
-import { BalanceCalculator } from '../ledger/balance-calculator';
+import { BalanceCalculator, BalanceSnapshot } from '../ledger/balance-calculator';
 import { Money } from '../money/money';
 import { ScheduledExpense } from '../scheduled/scheduled-expense';
+import { ScheduledIncome } from '../scheduled/scheduled-income';
 import { TransactionFactory } from '../transaction/transaction.factory';
 import { ProjectionEngine } from './projection-engine';
 
@@ -80,5 +81,123 @@ describe('ProjectionEngine', () => {
     const p = engine.project({ snapshot, scheduledExpenses: [], from, to });
     expect(p.availableBalance).toEqual(p.netWorth);
     expect(p.timeline).toHaveLength(1);
+  });
+});
+
+describe('ProjectionEngine con ingresos programados', () => {
+  const engine = new ProjectionEngine('COP');
+  const from = d('2026-10-24');
+  const to = d('2026-11-30');
+  const income = (id: string, amount: number, startDate: string, over: Partial<Parameters<typeof ScheduledIncome.create>[0]> = {}) =>
+    ScheduledIncome.create({ id, description: id, amount: cop(amount), accountId: 'bancolombia', frequency: 'MONTHLY', startDate: d(startDate), ...over });
+  const cash = (n: number) => new BalanceSnapshot([], cop(n));
+  const expense = (id: string, amount: number, on: string) =>
+    ScheduledExpense.create({ id, description: id, amount: cop(amount), accountId: 'bancolombia', frequency: 'ONCE', startDate: d(on) });
+  const day = (p: { date: Date }) => p.date.toISOString().slice(0, 10);
+
+  it('con y sin ingresos, lo que ya existía no cambia ni un dato', () => {
+    const without = engine.project({ snapshot, scheduledExpenses: scheduled, from, to });
+    const withIncome = engine.project({
+      snapshot,
+      scheduledExpenses: scheduled,
+      scheduledIncomes: [income('sueldo', 2_000_000, '2026-10-30'), income('extra', 77, '2026-11-02', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(withIncome.availableBalance).toEqual(without.availableBalance);
+    expect(withIncome.committed).toEqual(without.committed);
+    expect(withIncome.isShortfall).toEqual(without.isShortfall);
+    expect(withIncome.commitments).toEqual(without.commitments);
+    expect(withIncome.timeline).toEqual(without.timeline);
+    expect(withIncome.netWorth).toEqual(without.netWorth);
+    expect(withIncome.accounts).toEqual(without.accounts);
+  });
+
+  it('un ingreso esperado nunca arregla un déficit del Saldo Real', () => {
+    const p = engine.project({
+      snapshot: cash(100),
+      scheduledExpenses: [expense('viaje', 500, '2026-11-05')],
+      scheduledIncomes: [income('sueldo', 10_000, '2026-11-30', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(p.availableBalance).toEqual(cop(-400));
+    expect(p.isShortfall).toBe(true);
+    expect(p.expectedIncome).toEqual(cop(10_000));
+    expect(p.availableWithIncome).toEqual(cop(9_600));
+  });
+
+  it('suma los ingresos esperados hasta la fecha de corte', () => {
+    const p = engine.project({ snapshot, scheduledExpenses: scheduled, scheduledIncomes: [income('sueldo', 2_000_000, '2026-10-30')], from, to });
+    expect(p.expectedIncome).toEqual(cop(4_000_000));
+    expect(p.availableWithIncome).toEqual(cop(6_670_000));
+  });
+
+  it('sin ingresos: nada esperado, y el punto más bajo es el del propio disponible', () => {
+    const p = engine.project({ snapshot, scheduledExpenses: scheduled, from, to });
+    expect(p.expectedIncome).toEqual(cop(0));
+    expect(p.availableWithIncome).toEqual(p.availableBalance);
+    expect(day(p.lowestWithIncome)).toBe('2026-11-28');
+    expect(p.lowestWithIncome.balance).toEqual(cop(2_670_000));
+  });
+
+  it('sueldo el 30 y gasto el 5: el punto más bajo es negativo aunque el total sea positivo', () => {
+    const p = engine.project({
+      snapshot: cash(100),
+      scheduledExpenses: [expense('arriendo', 500, '2026-11-05')],
+      scheduledIncomes: [income('sueldo', 1_000, '2026-11-30', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(p.availableWithIncome).toEqual(cop(600));
+    expect(day(p.lowestWithIncome)).toBe('2026-11-05');
+    expect(p.lowestWithIncome.balance).toEqual(cop(-400));
+  });
+
+  it('el mismo día, el ingreso se aplica antes que el gasto', () => {
+    const p = engine.project({
+      snapshot: cash(100),
+      scheduledExpenses: [expense('arriendo', 350, '2026-11-05')],
+      scheduledIncomes: [income('sueldo', 300, '2026-11-05', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(day(p.lowestWithIncome)).toBe('2026-11-05');
+    expect(p.lowestWithIncome.balance).toEqual(cop(50));
+  });
+
+  it('en empate gana el primer día', () => {
+    const p = engine.project({
+      snapshot: cash(100),
+      scheduledExpenses: [expense('a', 100, '2026-11-05'), expense('b', 100, '2026-11-15')],
+      scheduledIncomes: [income('i', 100, '2026-11-10', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(day(p.lowestWithIncome)).toBe('2026-11-05');
+    expect(p.lowestWithIncome.balance).toEqual(cop(0));
+  });
+
+  it('si nada baja del saldo de hoy, el punto más bajo es hoy', () => {
+    const p = engine.project({ snapshot: cash(100), scheduledExpenses: [], scheduledIncomes: [income('i', 50, '2026-11-10', { frequency: 'ONCE' })], from, to });
+    expect(day(p.lowestWithIncome)).toBe('2026-10-24');
+    expect(p.lowestWithIncome.balance).toEqual(cop(100));
+  });
+
+  it('un ingreso vencido sin recibir no cuenta', () => {
+    const p = engine.project({
+      snapshot: cash(100),
+      scheduledExpenses: [],
+      scheduledIncomes: [income('viejo', 999, '2026-09-30', { endDate: d('2026-10-01') }), income('unico', 999, '2026-10-20', { frequency: 'ONCE' })],
+      from,
+      to,
+    });
+    expect(p.expectedIncome).toEqual(cop(0));
+    expect(p.availableWithIncome).toEqual(cop(100));
+  });
+
+  it('respeta lo ya recibido (settledThrough)', () => {
+    const p = engine.project({ snapshot: cash(0), scheduledExpenses: [], scheduledIncomes: [income('sueldo', 100, '2026-10-30', { settledThrough: d('2026-10-30') })], from, to });
+    expect(p.expectedIncome).toEqual(cop(100));
   });
 });
