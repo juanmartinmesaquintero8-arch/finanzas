@@ -16,6 +16,7 @@ export const routes = {
   spending: (mes?: string) => (mes ? `/historial?vista=gasto&mes=${mes}` : '/historial?vista=gasto'),
   add: '/agregar',
   scheduled: '/programados',
+  scheduledIncomes: '/programados?tipo=ingresos',
   settings: '/ajustes',
   newAccount: '/cuentas/nueva',
   editAccount: (id: string) => `/cuentas/editar?id=${id}`,

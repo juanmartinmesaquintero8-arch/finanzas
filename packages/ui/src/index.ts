@@ -29,3 +29,6 @@ export { SpendingBreakdown } from './components/SpendingBreakdown';
 export { SpendingHomeCard } from './components/SpendingHomeCard';
 export { HistoryViewSwitch } from './components/HistoryViewSwitch';
 export { ActiveFilters, type ActiveFilter } from './components/ActiveFilters';
+export { ScheduledKindSwitch } from './components/ScheduledKindSwitch';
+export { ExpectedIncomeNote } from './components/ExpectedIncomeNote';
+export { SCHEDULED_COPY, type ScheduledKind, type ScheduledCopy } from './lib/scheduled-copy';

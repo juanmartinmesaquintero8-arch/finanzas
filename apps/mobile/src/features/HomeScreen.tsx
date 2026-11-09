@@ -1,6 +1,6 @@
 'use client';
 
-import { AccountCards, AvailableBalanceCard, SpendingHomeCard, UpcomingCommitments, horizonEnd, isHorizon, ui } from '@finanzas/ui';
+import { AccountCards, AvailableBalanceCard, ExpectedIncomeNote, SpendingHomeCard, UpcomingCommitments, horizonEnd, isHorizon, ui } from '@finanzas/ui';
 import { useSearchParams } from 'next/navigation';
 import { InstallPrompt } from '@/pwa/install';
 import { useServices } from '@/state/services-provider';
@@ -49,6 +49,11 @@ export function HomeScreen() {
         </section>
       )}
       <AvailableBalanceCard projection={projection} horizon={horizon} horizonHref={routes.homeHorizon} />
+      <ExpectedIncomeNote
+        expectedIncome={projection.expectedIncome}
+        availableWithIncome={projection.availableWithIncome}
+        lowestWithIncome={projection.lowestWithIncome}
+      />
       {spending && spending.total !== '0' && <SpendingHomeCard total={spending.total} href={routes.spending()} />}
       <AccountCards accounts={projection.accounts} editHref={routes.editAccount} />
       <UpcomingCommitments commitments={projection.commitments} accountNames={names} />

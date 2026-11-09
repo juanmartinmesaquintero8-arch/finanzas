@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { nextOccurrence } from '../lib/domain-helpers';
+import { hasDueOccurrence, nextOccurrence } from '../lib/domain-helpers';
 import { formatMoneyView, formatShortDate, frequencyLabel } from '../lib/format';
+import { SCHEDULED_COPY, type ScheduledKind } from '../lib/scheduled-copy';
 import type { Account, ScheduledExpense } from '../lib/types';
 import styles from './ScheduledList.module.css';
 import ui from './ui.module.css';
@@ -14,16 +15,20 @@ interface Props {
   onSettle: (id: string, through: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onEdit?: (item: ScheduledExpense) => void;
+  /** Gasto (por defecto) o ingreso programado. */
+  kind?: ScheduledKind;
 }
 
-export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEdit }: Props) {
+export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEdit, kind = 'expense' }: Props) {
+  const copy = SCHEDULED_COPY[kind];
+  const income = kind === 'income';
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const names = new Map(accounts.map((a) => [a.id, a.name]));
 
   if (items.length === 0) {
-    return <p className={ui.empty}>No tienes gastos programados. Agrega el arriendo, el internet o lo que pagues seguido.</p>;
+    return <p className={ui.empty}>{copy.empty}</p>;
   }
 
   async function run(id: string, action: () => Promise<void>, failure: string) {
@@ -49,6 +54,8 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEd
       <ul className={styles.list}>
         {items.map((s) => {
           const next = nextOccurrence(s, today);
+          // Un ingreso solo se puede registrar cuando su fecha ya llegó; un gasto, mientras tenga un próximo pago.
+          const canSettle = income ? hasDueOccurrence(s, today) : !!next;
           return (
             <li key={s.id} className={`${ui.card} ${styles.item}`}>
               <div className={styles.top}>
@@ -56,15 +63,17 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEd
                   <span className={styles.desc}>{s.description}</span>
                   <span className={styles.freq}>{frequencyLabel(s.frequency, s.startDate)}</span>
                 </div>
-                <span className={styles.amount}>{formatMoneyView(s.amount)}</span>
+                <span className={income ? styles.amountIncome : styles.amount}>
+                  {income ? `+ ${formatMoneyView(s.amount)}` : formatMoneyView(s.amount)}
+                </span>
               </div>
               <p className={styles.meta}>
                 <span>{names.get(s.accountId) ?? 'Cuenta'}</span>
-                <span>{next ? `Próximo pago: ${formatShortDate(next)}` : 'Sin pagos pendientes'}</span>
+                <span>{next ? `${copy.nextLabel}: ${formatShortDate(next)}` : copy.noneLeft}</span>
               </p>
               {confirming === s.id ? (
                 <div className={styles.actions}>
-                  <p className={styles.ask}>¿Eliminar este gasto programado?</p>
+                  <p className={styles.ask}>{copy.deleteQuestion}</p>
                   <button
                     type="button"
                     className={ui.buttonDanger}
@@ -82,11 +91,11 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEd
                   <button
                     type="button"
                     className={ui.button}
-                    disabled={busy === s.id || !next}
-                    aria-label={`Ya lo pagué: ${s.description}`}
-                    onClick={() => run(s.id, () => onSettle(s.id, today), 'No pudimos registrar el pago. Intenta de nuevo.')}
+                    disabled={busy === s.id || !canSettle}
+                    aria-label={`${copy.settleLabel}: ${s.description}`}
+                    onClick={() => run(s.id, () => onSettle(s.id, today), copy.settleError)}
                   >
-                    Ya lo pagué
+                    {copy.settleLabel}
                   </button>
                   {onEdit && (
                     <button

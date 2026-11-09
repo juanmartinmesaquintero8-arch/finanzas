@@ -97,6 +97,8 @@ const ROUTES = [
   'historial/?vista=gasto&mes=2026-10',
   'historial/?mes=2026-10&categoria=mercado',
   'programados/',
+  // El selector Gastos | Ingresos: la vista de ingresos programados.
+  'programados/?tipo=ingresos',
   'cuentas/nueva/',
   'cuentas/editar/',
   'movimientos/editar/',
@@ -123,6 +125,23 @@ test('sin conexión, "En qué gasto" vuelve a abrir y muestra el estado vacío',
   await page.reload();
   await expect(page.getByRole('group', { name: 'Vista' })).toBeVisible();
   await expect(page.getByText(/Todavía no hay gastos en/)).toBeVisible();
+  await expectNoViolations(page, consoleErrors);
+});
+
+test('sin conexión, Programados vuelve a abrir con el selector y la vista de ingresos', async ({ page, context }) => {
+  const consoleErrors = await watchViolations(page);
+  await page.goto('programados/');
+  await expect(page.getByRole('group', { name: 'Tipo' })).toBeVisible();
+  await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+  await context.setOffline(true);
+  await page.reload();
+  await page.getByRole('link', { name: 'Ingresos' }).click();
+  await expect(page.getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByText('No tienes ingresos programados. Agrega tu sueldo o lo que recibes seguido.')).toBeVisible();
+  await page.getByRole('link', { name: 'Gastos' }).click();
+  await expect(page.getByText(/No tienes gastos programados/)).toBeVisible();
   await expectNoViolations(page, consoleErrors);
 });
 

@@ -1,4 +1,5 @@
 import { parseAmountInput } from './format';
+import { SCHEDULED_COPY, type ScheduledKind } from './scheduled-copy';
 import type { CreateScheduledExpenseInput, CreateTransactionInput, Frequency, TransactionType } from './types';
 
 export type FieldErrors = Record<string, string>;
@@ -55,17 +56,19 @@ export interface ScheduledFormValues {
   frequency: Frequency;
   startDate: string;
   endDate?: string;
+  category?: string;
 }
 
-export function validateScheduledForm(v: ScheduledFormValues): ValidationResult<CreateScheduledExpenseInput> {
+export function validateScheduledForm(v: ScheduledFormValues, kind: ScheduledKind = 'expense'): ValidationResult<CreateScheduledExpenseInput> {
+  const copy = SCHEDULED_COPY[kind];
   const errors: FieldErrors = {};
   const amount = parseAmountInput(v.amountText);
-  if (!v.description.trim()) errors.description = 'Escribe qué vas a pagar.';
+  if (!v.description.trim()) errors.description = copy.describeError;
   if (!amount) errors.amount = 'Escribe un monto mayor a cero.';
-  if (!v.accountId) errors.account = 'Elige de qué cuenta se paga.';
-  if (!v.startDate) errors.startDate = 'Elige la fecha del primer pago.';
+  if (!v.accountId) errors.account = copy.accountError;
+  if (!v.startDate) errors.startDate = copy.startError;
   if (v.endDate && v.startDate && v.endDate < v.startDate) {
-    errors.endDate = 'El último pago no puede ser antes del primero.';
+    errors.endDate = copy.endError;
   }
   if (Object.keys(errors).length > 0 || !amount) return { ok: false, errors };
   const value: CreateScheduledExpenseInput = {
@@ -76,5 +79,7 @@ export function validateScheduledForm(v: ScheduledFormValues): ValidationResult<
     startDate: v.startDate,
   };
   if (v.endDate) value.endDate = v.endDate;
+  const category = v.category?.trim();
+  if (category) value.category = category;
   return { ok: true, value };
 }
