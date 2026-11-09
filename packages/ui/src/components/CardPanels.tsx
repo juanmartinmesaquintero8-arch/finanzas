@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ActionResult } from '../lib/action-result';
+import { feeImpactText } from '../lib/cards';
 import { formatGroupedDigits, formatMoneyCompact, parseAmountInput } from '../lib/format';
-import type { Account, InstallmentView } from '../lib/types';
+import type { Account, FeeImpact, InstallmentView } from '../lib/types';
 import { useSubmit } from '../lib/use-submit';
 import { ChipGroup } from './ChipGroup';
 import styles from './CreditCards.module.css';
@@ -173,20 +174,41 @@ export function SettlePanel({ description, offer, onConfirm, onDone, accounts, a
   );
 }
 
-export function ConfirmPanel({ label, text, confirmLabel, onConfirm, onDone, onCancel }: {
+/** Confirmación que primero averigua qué cuotas de manejo se perderían; no deja confirmar hasta saberlo. */
+export function FeeAwareConfirmPanel({ loadImpact, ...panel }: Omit<Parameters<typeof ConfirmPanel>[0], 'warning' | 'waiting'> & { loadImpact: () => Promise<FeeImpact> }) {
+  const [state, setState] = useState<{ ready: boolean; warning: string | null }>({ ready: false, warning: null });
+  useEffect(() => {
+    let active = true;
+    loadImpact().then(
+      (impact) => active && setState({ ready: true, warning: feeImpactText(impact) }),
+      () => active && setState({ ready: true, warning: null }),
+    );
+    return () => {
+      active = false;
+    };
+    // Se calcula una sola vez, al abrir la confirmación.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <ConfirmPanel {...panel} warning={state.warning} waiting={!state.ready} />;
+}
+
+export function ConfirmPanel({ label, text, confirmLabel, onConfirm, onDone, onCancel, warning, waiting }: {
   label: string;
   text: string;
   confirmLabel: string;
   onConfirm: () => Promise<ActionResult>;
   onDone: () => void;
   onCancel: () => void;
+  warning?: string | null;
+  waiting?: boolean;
 }) {
   const { pending, error, submit } = useSubmit(onDone);
   return (
     <Panel label={label} error={error}>
       <p className={styles.summary}>{text}</p>
+      {warning && <p className={styles.warning}>{warning}</p>}
       <div className={styles.actions}>
-        <button type="button" className={ui.buttonDanger} disabled={pending} onClick={() => void submit(onConfirm)}>
+        <button type="button" className={ui.buttonDanger} disabled={pending || waiting} onClick={() => void submit(onConfirm)}>
           {pending ? 'Guardando…' : confirmLabel}
         </button>
         <button type="button" className={ui.buttonGhost} disabled={pending} onClick={onCancel}>

@@ -3,9 +3,9 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import type { CardsApi } from '../lib/cards';
-import { formatDueDate, formatMoneyCompact, monthName } from '../lib/format';
+import { formatDueDate, formatMoneyCompact, formatMonthLong } from '../lib/format';
 import type { Account, CardView, PurchaseView } from '../lib/types';
-import { ConfirmPanel, PayFeePanel, PayInstallmentPanel, SettlePanel } from './CardPanels';
+import { ConfirmPanel, FeeAwareConfirmPanel, PayFeePanel, PayInstallmentPanel, SettlePanel } from './CardPanels';
 import styles from './CreditCards.module.css';
 import ui from './ui.module.css';
 
@@ -30,9 +30,18 @@ type Mode =
 
 /** Pantalla de tarjetas: una por tarjeta, y cada acción se confirma ahí mismo. Sólo presentación. */
 export function CardsScreen({ cards, accounts, today, api }: Props) {
-  const [mode, setMode] = useState<Mode>({ kind: 'list' });
+  const [mode, setModeState] = useState<Mode>({ kind: 'list' });
+  const [notice, setNotice] = useState<string | null>(null);
   const formTop = useRef<HTMLDivElement>(null);
-  const toList = () => setMode({ kind: 'list' });
+  const setMode = (next: Mode) => {
+    setNotice(null);
+    setModeState(next);
+  };
+  const toList = () => setModeState({ kind: 'list' });
+  const toListWith = (message?: string) => {
+    setNotice(message ?? null);
+    toList();
+  };
 
   // Al abrir un formulario desde abajo en la lista, se empieza a llenar desde su primer campo.
   useEffect(() => {
@@ -43,9 +52,9 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
     return (
       <div ref={formTop} className={styles.formTop}>
         {mode.kind === 'newCard' && <CardForm accounts={accounts} checkRate={(t, b) => api.checkRate(t, b)} onSubmit={(input) => api.createCard(input)} onDone={toList} onCancel={toList} />}
-        {mode.kind === 'editCard' && <CardForm key={mode.card.id} card={mode.card} accounts={accounts} checkRate={(t, b) => api.checkRate(t, b)} onSubmit={(input) => api.updateCard(mode.card.id, input)} onDone={toList} onCancel={toList} />}
-        {mode.kind === 'addPurchase' && <PurchaseForm cards={cards} today={today} api={api} initialCardId={mode.cardId} onDone={toList} onCancel={toList} />}
-        {mode.kind === 'editPurchase' && <PurchaseForm key={mode.purchase.id} cards={cards} today={today} api={api} purchase={mode.purchase} onDone={toList} onCancel={toList} />}
+        {mode.kind === 'editCard' && <CardForm key={mode.card.id} card={mode.card} accounts={accounts} checkRate={(t, b) => api.checkRate(t, b)} checkImpact={(input) => api.cardChangeImpact(mode.card.id, input)} onSubmit={(input) => api.updateCard(mode.card.id, input)} onDone={toList} onCancel={toList} />}
+        {mode.kind === 'addPurchase' && <PurchaseForm cards={cards} today={today} api={api} initialCardId={mode.cardId} onDone={toListWith} onCancel={toList} />}
+        {mode.kind === 'editPurchase' && <PurchaseForm key={mode.purchase.id} cards={cards} today={today} api={api} purchase={mode.purchase} onDone={toListWith} onCancel={toList} />}
       </div>
     );
   }
@@ -53,6 +62,11 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
   const hasCreditAccount = accounts.some((a) => a.type === 'CREDIT');
   return (
     <div className={ui.stack}>
+      {notice && (
+        <p role="status" className={ui.notice}>
+          {notice}
+        </p>
+      )}
       {hasCreditAccount && <p className={styles.warning}>Tienes una cuenta tipo tarjeta de crédito. Si registras aquí esa misma tarjeta, no sumes su deuda dos veces.</p>}
       <button type="button" className={ui.button} disabled={accounts.length === 0} onClick={() => setMode({ kind: 'newCard' })}>
         Agregar tarjeta
@@ -80,10 +94,21 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
   );
 }
 
+function overdue(amount: string, date: string, today: string): string {
+  return `Vencida el ${formatDueDate(date, today)}: ${formatMoneyCompact(amount)}`;
+}
+
 function statusOf(p: PurchaseView, today: string): string {
   if (p.closedOn) return `Liquidada el ${formatDueDate(p.closedOn, today)}`;
+  if (p.next && p.next.dueDate < today) return overdue(p.next.total, p.next.dueDate, today);
   if (p.next) return `Próxima: ${formatMoneyCompact(p.next.total)} el ${formatDueDate(p.next.dueDate, today)}`;
   return 'Pagada por completo';
+}
+
+function nextLine(card: CardView, today: string): string {
+  if (!card.next) return 'Sin cuotas por pagar';
+  if (card.next.date < today) return overdue(card.next.amount, card.next.date, today);
+  return `Próxima cuota ${formatMoneyCompact(card.next.amount)} el ${formatDueDate(card.next.date, today)}`;
 }
 
 function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onEditPurchase }: {
@@ -106,7 +131,7 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
       <div className={styles.head}>
         <h2 className={styles.name}>{card.name}</h2>
         <p className={styles.debt}>Debes en total {formatMoneyCompact(card.debt)}</p>
-        <p className={styles.next}>{card.next ? `Próxima cuota ${formatMoneyCompact(card.next.amount)} el ${formatDueDate(card.next.date, today)}` : 'Sin cuotas por pagar'}</p>
+        <p className={styles.next}>{nextLine(card, today)}</p>
       </div>
       <button type="button" className={ui.button} aria-label={`Agregar compra en ${card.name}`} onClick={onAddPurchase}>
         Agregar compra
@@ -130,14 +155,15 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
               ) : panel === `undo:${p.id}` ? (
                 <ConfirmPanel
                   label={`Deshacer último pago de ${p.description}`}
-                  text="Se borra el último pago de esta compra y su cuota vuelve a quedar pendiente."
+                  text="Esta cuota vuelve a quedar pendiente. Si la pagaste desde la app, el dinero vuelve a la cuenta; si la habías marcado como ya pagada, ningún saldo cambia."
                   confirmLabel="Sí, deshacer"
                   onConfirm={() => api.undoLastPayment(p.id, { installment: p.paidInstallments })}
                   onDone={close}
                   onCancel={close}
                 />
               ) : panel === `delete:${p.id}` ? (
-                <ConfirmPanel
+                <FeeAwareConfirmPanel
+                  loadImpact={() => api.purchaseRemovalImpact(p.id)}
                   label={`Eliminar compra ${p.description}`}
                   text="Se quita la deuda de esta compra. Los pagos que ya hiciste se quedan en tu historial."
                   confirmLabel="Sí, eliminar"
@@ -180,12 +206,14 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
           <h3 className={styles.feesTitle}>Cuotas de manejo pendientes</h3>
           <ul className={styles.rows}>
             {card.pendingFees.map((f) => {
-              const name = monthName(f.month);
-              const label = `Pagar manejo de ${name}`;
+              const month = formatMonthLong(f.month);
+              const label = `Pagar manejo de ${month}`;
               return (
                 <li key={f.month} className={styles.row}>
                   <div className={styles.rowTop}>
-                    <span className={styles.desc}>Manejo de {name}</span>
+                    <span className={styles.desc}>
+                      Manejo {card.name} ({month})
+                    </span>
                     <span className={styles.figure}>{formatMoneyCompact(f.amount)}</span>
                   </div>
                   <p className={styles.meta}>Vence el {formatDueDate(f.dueDate, today)}</p>
@@ -204,6 +232,24 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
           </ul>
         </div>
       )}
+
+      {card.lastPaidFeeMonth &&
+        (panel === 'undo-fee' ? (
+          <ConfirmPanel
+            label={`Deshacer último pago de manejo de ${card.name}`}
+            text="Esta cuota de manejo vuelve a quedar pendiente y el dinero vuelve a la cuenta."
+            confirmLabel="Sí, deshacer"
+            onConfirm={() => api.undoLastFee(card.id, { month: card.lastPaidFeeMonth! })}
+            onDone={close}
+            onCancel={close}
+          />
+        ) : (
+          <div className={styles.actions}>
+            <button type="button" className={ui.buttonGhost} aria-label={`Deshacer último pago de manejo de ${card.name}`} onClick={() => setPanel('undo-fee')}>
+              Deshacer último pago de manejo
+            </button>
+          </div>
+        ))}
 
       {panel === 'delete-card' ? (
         <ConfirmPanel

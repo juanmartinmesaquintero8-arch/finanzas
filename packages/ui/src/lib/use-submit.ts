@@ -9,7 +9,7 @@ const FAILED = 'No pudimos guardar. Intenta de nuevo.';
  * Ejecuta una acción de dinero una sola vez: mientras corre, y después si salió bien, ignora más toques.
  * Solo si falla se puede volver a intentar.
  */
-export function useSubmit(onDone: () => void) {
+export function useSubmit(onDone: (notice?: string) => void) {
   const running = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,14 +20,16 @@ export function useSubmit(onDone: () => void) {
     setPending(true);
     setError(null);
     let failure: string | null = null;
+    let notice: string | undefined;
     try {
       const result = await action();
-      if (!result.ok) failure = result.error;
+      if (result.ok) notice = result.notice;
+      else failure = result.error;
     } catch {
       failure = FAILED;
     }
     if (failure === null) {
-      onDone();
+      onDone(notice);
       return;
     }
     running.current = false;

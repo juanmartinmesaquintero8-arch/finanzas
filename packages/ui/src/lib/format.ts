@@ -85,6 +85,11 @@ export function monthName(month: string): string {
   return MONTHS[Number(month.slice(5, 7)) - 1] ?? '';
 }
 
+/** 'noviembre 2026'. */
+export function formatMonthLong(month: string): string {
+  return `${monthName(month)} ${month.slice(0, 4)}`;
+}
+
 /** 'Noviembre 2026'. */
 export function formatMonthTitle(month: string): string {
   const name = monthName(month);

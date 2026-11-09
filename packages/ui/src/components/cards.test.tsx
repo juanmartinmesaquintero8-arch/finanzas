@@ -40,6 +40,7 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   firstDueDate: '2026-09-15',
   monthlyRatePpm: 20000,
   closedOn: null,
+  dueDayAnchor: 15,
   next: installment(4, '2026-12-15', '118000', '100000', '18000'),
   settle: { capital: '900000', interest: '18000', total: '918000' },
   ...over,
@@ -60,6 +61,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   next: { amount: '118000', date: '2026-12-15' },
   purchases: [purchase()],
   pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }],
+  lastPaidFeeMonth: null,
   ...over,
 });
 
@@ -76,6 +78,10 @@ function api(over: Partial<CardsApi> = {}): CardsApi {
     undoLastPayment: ok(),
     settle: ok(),
     payFee: ok(),
+    undoLastFee: ok(),
+    cardChangeImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
+    purchaseRemovalImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
+    purchaseChangeImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
     checkRate: vi.fn((text: string) => (text === '5' ? { warning: true } : text === '11' ? { error: 'La tasa M.V. no puede superar 10 %' } : {})),
     suggestFirstDueDate: vi.fn((_card: { dueDay: number }, date: string) => (date ? '2026-12-15' : null)),
     previewPurchase: vi.fn(() => ({ ok: true as const, preview: preview12 })),
@@ -398,7 +404,7 @@ describe('CardsScreen', () => {
     expect(screen.getByRole('button', { name: 'Pagar cuota: Nevera' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Deshacer último pago: Nevera' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Liquidar: Nevera' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Pagar manejo de noviembre' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pagar manejo de noviembre 2026' })).toBeInTheDocument();
   });
 
   it('una compra sin pagos no ofrece deshacer; una cerrada no ofrece pagar', () => {
@@ -463,7 +469,7 @@ describe('CardsScreen', () => {
 
   it('pagar manejo permite ajustar el valor', async () => {
     const a = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de noviembre' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de noviembre 2026' }));
     const value = screen.getByLabelText('Valor del manejo');
     expect(value).toHaveValue('18.000');
     await userEvent.clear(value);
@@ -484,6 +490,7 @@ describe('CardsScreen', () => {
     const a = setup();
     await userEvent.click(screen.getByRole('button', { name: 'Eliminar compra Nevera' }));
     expect(screen.getByText('Se quita la deuda de esta compra. Los pagos que ya hiciste se quedan en tu historial.')).toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Sí, eliminar' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Sí, eliminar' }));
     expect(a.removePurchase).toHaveBeenCalledWith('p1');
   });

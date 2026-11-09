@@ -2,9 +2,9 @@
 
 import { useState, type FormEvent } from 'react';
 import type { ActionResult } from '../lib/action-result';
-import { validateCardForm, type CardsApi } from '../lib/cards';
+import { feeImpactText, validateCardForm, type CardsApi } from '../lib/cards';
 import { formatGroupedDigits } from '../lib/format';
-import type { Account, CardFeeKind, CardInput, CardView, RateBasis } from '../lib/types';
+import type { Account, CardFeeKind, CardInput, CardView, FeeImpact, RateBasis } from '../lib/types';
 import { useSubmit } from '../lib/use-submit';
 import type { FieldErrors } from '../lib/validation';
 import { ChipGroup } from './ChipGroup';
@@ -34,9 +34,11 @@ interface Props {
   onCancel: () => void;
   /** Si se pasa, edita esta tarjeta. */
   card?: CardView;
+  /** Al editar: qué cuotas de manejo sin pagar se perderían o cambiarían con estos datos. */
+  checkImpact?: (input: CardInput) => Promise<FeeImpact>;
 }
 
-export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card }: Props) {
+export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card, checkImpact }: Props) {
   const [name, setName] = useState(card?.name ?? '');
   const [dueDayText, setDueDayText] = useState(card ? String(card.dueDay) : '');
   const [paymentAccountId, setPaymentAccountId] = useState(card?.paymentAccountId ?? '');
@@ -46,11 +48,13 @@ export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card
   const [rateBasis, setRateBasis] = useState<RateBasis>(card?.rateBasis ?? 'MV');
   const [rateText, setRateText] = useState(card?.rateText ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState<{ input: CardInput; warning: string } | null>(null);
   const { pending, error, submit } = useSubmit(onDone);
 
   const looksAnnual = hasInterest && rateText.trim() !== '' && !!checkRate(rateText, rateBasis).warning;
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const result = validateCardForm({ name, dueDayText, paymentAccountId, feeKind, feeAmountText, hasInterest, rateBasis, rateText }, checkRate);
     if (!result.ok) {
@@ -58,7 +62,34 @@ export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card
       return;
     }
     setErrors({});
+    if (checkImpact) {
+      setChecking(true);
+      const warning = feeImpactText(await checkImpact(result.value).finally(() => setChecking(false)));
+      if (warning) {
+        setConfirming({ input: result.value, warning });
+        return;
+      }
+    }
     void submit(() => onSubmit(result.value));
+  }
+
+  if (confirming) {
+    return (
+      <section className={`${ui.card} ${ui.stack}`} aria-label="Confirmar cambios">
+        <p className={styles.warning}>{confirming.warning}</p>
+        {error && (
+          <p role="alert" className={ui.alert}>
+            {error}
+          </p>
+        )}
+        <button type="button" className={ui.button} disabled={pending} onClick={() => void submit(() => onSubmit(confirming.input))}>
+          {pending ? 'Guardando…' : 'Sí, guardar'}
+        </button>
+        <button type="button" className={ui.buttonGhost} disabled={pending} onClick={() => setConfirming(null)}>
+          Volver
+        </button>
+      </section>
+    );
   }
 
   return (
@@ -119,7 +150,7 @@ export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card
           {error}
         </p>
       )}
-      <button type="submit" className={ui.button} disabled={pending}>
+      <button type="submit" className={ui.button} disabled={pending || checking}>
         {pending ? 'Guardando…' : card ? 'Guardar cambios' : 'Guardar tarjeta'}
       </button>
       <button type="button" className={ui.buttonGhost} onClick={onCancel}>

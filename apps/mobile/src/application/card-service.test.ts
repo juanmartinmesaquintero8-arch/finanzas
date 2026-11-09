@@ -493,7 +493,7 @@ describe('reglas fuera del servicio', () => {
     expect(await s.transactions.update(`cp-${p.id}-1`, edit)).toEqual({ ok: false, error });
     expect(await s.transactions.update(`ci-${p.id}-1`, edit)).toEqual({ ok: false, error });
     expect(await s.transactions.remove(`cp-${p.id}-1`)).toEqual({ ok: false, error });
-    expect(await s.transactions.remove(`cf-x-2026-03`)).toEqual({ ok: false, error });
+    expect(await s.transactions.remove('cf-x-2026-03')).toEqual({ ok: false, error: 'No encontramos ese movimiento.' });
     expect(await s.cards.undoLastPayment(p.id)).toEqual({ ok: true });
   });
 

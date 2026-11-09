@@ -4,11 +4,13 @@ import type {
   CardFeeKind,
   CardInput,
   CardView,
+  FeeImpact,
   PayFeeInput,
   PayInstallmentInput,
   PurchaseInput,
   PurchasePreview,
   PurchasePreviewResult,
+  PurchaseView,
   RateBasis,
   RateCheck,
   SettleInput,
@@ -27,9 +29,18 @@ export interface CardsApi {
   undoLastPayment(id: string, input?: { installment?: number }): Promise<ActionResult>;
   settle(id: string, input: SettleInput): Promise<ActionResult>;
   payFee(cardId: string, month: string, input: PayFeeInput): Promise<ActionResult>;
+  undoLastFee(cardId: string, input?: { month?: string }): Promise<ActionResult>;
+  cardChangeImpact(cardId: string, input: CardInput): Promise<FeeImpact>;
+  purchaseRemovalImpact(purchaseId: string): Promise<FeeImpact>;
+  purchaseChangeImpact(purchaseId: string, input: PurchaseInput): Promise<FeeImpact>;
   checkRate(text: string, basis: RateBasis): RateCheck;
   suggestFirstDueDate(card: Pick<CardView, 'dueDay'>, purchaseDate: string): string | null;
-  previewPurchase(card: Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>, input: PurchaseInput): PurchasePreviewResult;
+  /** Con `agreed`, calcula con lo que ya se pactó en esa compra y no con la tasa actual de la tarjeta. */
+  previewPurchase(
+    card: Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>,
+    input: PurchaseInput,
+    agreed?: Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'firstDueDate' | 'dueDayAnchor'>,
+  ): PurchasePreviewResult;
 }
 
 const MAX_INSTALLMENTS = 72;
@@ -118,6 +129,15 @@ export function validatePurchaseForm(v: PurchaseFormValues): ValidationResult<Pu
   if (paid) value.paidInstallments = paid;
   if (v.withoutInterest) value.withoutInterest = true;
   return { ok: true, value };
+}
+
+/** El aviso antes de confirmar un cambio que afecta cuotas de manejo sin pagar; null si no afecta ninguna. */
+export function feeImpactText(impact: FeeImpact): string | null {
+  const count = (n: number) => `${n} ${n === 1 ? 'cuota' : 'cuotas'} de manejo`;
+  const parts: string[] = [];
+  if (impact.lostCount > 0) parts.push(`Dejarás de ver ${count(impact.lostCount)} por ${formatMoneyCompact(impact.lostAmount)}.`);
+  if (impact.changedCount > 0) parts.push(`Cambiará el valor de ${count(impact.changedCount)} sin pagar.`);
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 const money = formatMoneyCompact;

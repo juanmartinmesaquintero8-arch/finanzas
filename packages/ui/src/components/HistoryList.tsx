@@ -58,25 +58,38 @@ export function HistoryList({ items, accounts, onDelete, now, editHref = default
         <section key={group.day} className={styles.group} aria-label={formatDayHeading(group.day, now)}>
           <h3 className={styles.heading}>{formatDayHeading(group.day, now)}</h3>
           <ul className={`${ui.card} ${styles.list}`}>
-            {group.items.map((t) => (
-              <li key={t.id} className={styles.row}>
-                <Link href={editHref(t.id)} className={styles.link} aria-label={`Editar ${t.description}`}>
-                <span className={`${styles.icon} ${styles[t.type]}`} role="img" aria-label={TYPE_LABEL[t.type]}>
-                  {ICON[t.type]}
-                </span>
-                <div className={styles.main}>
-                  <span className={styles.desc}>{t.description}</span>
-                  <span className={styles.meta}>
-                    <span>{transactionTitle(t, names)}</span>
-                    {t.category && <span className={styles.tag}>{t.category}</span>}
+            {group.items.map((t) => {
+              const body = (
+                <>
+                  <span className={`${styles.icon} ${styles[t.type]}`} role="img" aria-label={TYPE_LABEL[t.type]}>
+                    {ICON[t.type]}
                   </span>
-                </div>
-                <span className={`${styles.amount} ${styles[`amount${t.type}`]}`}>
-                  {SIGN[t.type]}
-                  {formatMoneyView(t.amount)}
-                </span>
-                </Link>
-                {confirming === t.id ? (
+                  <div className={styles.main}>
+                    <span className={styles.desc}>{t.description}</span>
+                    <span className={styles.meta}>
+                      <span>{transactionTitle(t, names)}</span>
+                      {t.category && <span className={styles.tag}>{t.category}</span>}
+                      {t.cardPayment && <span className={styles.cardTag}>Pago de tarjeta</span>}
+                    </span>
+                  </div>
+                  <span className={`${styles.amount} ${styles[`amount${t.type}`]}`}>
+                    {SIGN[t.type]}
+                    {formatMoneyView(t.amount)}
+                  </span>
+                </>
+              );
+              return (
+              <li key={t.id} className={styles.row}>
+                {t.cardPayment ? (
+                  <div className={styles.link}>{body}</div>
+                ) : (
+                  <Link href={editHref(t.id)} className={styles.link} aria-label={`Editar ${t.description}`}>
+                    {body}
+                  </Link>
+                )}
+                {t.cardPayment && !t.cardPayment.canDelete ? (
+                  <p className={styles.cardNote}>{t.cardPayment.message}</p>
+                ) : confirming === t.id ? (
                   <div className={styles.confirm}>
                     <p>¿Eliminar este movimiento?</p>
                     <button
@@ -102,7 +115,8 @@ export function HistoryList({ items, accounts, onDelete, now, editHref = default
                   </button>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       ))}

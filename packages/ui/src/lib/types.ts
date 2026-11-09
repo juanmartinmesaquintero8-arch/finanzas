@@ -25,6 +25,15 @@ export interface Transaction {
   accountId: string | null;
   fromAccountId: string | null;
   toAccountId: string | null;
+  /** Solo en la app móvil: el movimiento es un pago de tarjeta y no se edita como los demás. */
+  cardPayment?: CardPaymentInfo;
+}
+
+export interface CardPaymentInfo {
+  /** Por qué no se puede editar o borrar desde el historial. */
+  message: string;
+  /** true solo si su compra o tarjeta ya no existe: no queda deuda que cuadrar. */
+  canDelete: boolean;
 }
 
 export interface TransactionPage {
@@ -166,6 +175,7 @@ export interface PurchaseView {
   firstDueDate: string;
   monthlyRatePpm: number;
   closedOn: string | null;
+  dueDayAnchor: number | null;
   /** La cuota por pagar; null si está liquidada o pagada por completo. */
   next: InstallmentView | null;
   /** Lo que costaría liquidarla hoy; null si ya no se debe nada. */
@@ -197,6 +207,15 @@ export interface CardView {
   next: { amount: string; date: string } | null;
   purchases: PurchaseView[];
   pendingFees: PendingFeeView[];
+  /** Último mes de manejo con pago real ('YYYY-MM'); null si no hay ninguno. */
+  lastPaidFeeMonth: string | null;
+}
+
+/** Qué cuotas de manejo sin pagar desaparecen o cambian si se hace un cambio. */
+export interface FeeImpact {
+  lostCount: number;
+  lostAmount: string;
+  changedCount: number;
 }
 
 export interface CardInput {

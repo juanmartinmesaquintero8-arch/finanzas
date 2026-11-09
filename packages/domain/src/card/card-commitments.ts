@@ -13,6 +13,13 @@ export interface CardFeeDue {
   amount: Money;
 }
 
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** '2026-11' -> 'noviembre 2026'. */
+function monthInWords(month: YearMonth): string {
+  return `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+}
+
 function parseMonth(month: YearMonth): number {
   return Number(month.slice(0, 4)) * 12 + (Number(month.slice(5, 7)) - 1);
 }
@@ -100,7 +107,7 @@ export function cardCommitments(
       out.push({
         scheduledExpenseId: card.id,
         kind: 'CARD_FEE',
-        description: `Manejo ${card.name} (${fee.month})`,
+        description: `Manejo ${card.name} (${monthInWords(fee.month)})`,
         accountId: card.paymentAccountId,
         date: clamp(fee.dueDate),
         amount: fee.amount,

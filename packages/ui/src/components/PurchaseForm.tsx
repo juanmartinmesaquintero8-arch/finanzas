@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { installmentsOf, purchaseSummary, validatePurchaseForm, type CardsApi } from '../lib/cards';
+import { feeImpactText, installmentsOf, purchaseSummary, validatePurchaseForm, type CardsApi } from '../lib/cards';
 import { formatDueDate, formatGroupedDigits, formatMoneyCompact } from '../lib/format';
 import type { CardView, PurchaseInput, PurchasePreview, PurchaseView } from '../lib/types';
 import { useSubmit } from '../lib/use-submit';
@@ -21,7 +21,7 @@ interface Props {
   initialCardId?: string;
   /** Si se pasa, edita esta compra. */
   purchase?: PurchaseView;
-  onDone: () => void;
+  onDone: (notice?: string) => void;
   onCancel: () => void;
 }
 
@@ -44,7 +44,8 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
   const [interestOverride, setInterestOverride] = useState<boolean | null>(purchase ? purchase.monthlyRatePpm === 0 : null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<{ input: PurchaseInput; preview: PurchasePreview } | null>(null);
+  const [confirming, setConfirming] = useState<{ input: PurchaseInput; preview: PurchasePreview; warning: string | null } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const { pending, error, submit } = useSubmit(onDone);
 
@@ -78,7 +79,19 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
     });
   }
 
-  function handleSubmit(e: FormEvent) {
+  /** Editar: ¿cambia alguna cifra o fecha, o solo los textos? */
+  function changesNumbers(input: PurchaseInput, p: PurchaseView): boolean {
+    return (
+      input.amount !== p.amount ||
+      input.installments !== p.installments ||
+      input.purchaseDate !== p.purchaseDate ||
+      input.firstDueDate !== p.firstDueDate ||
+      (input.paidInstallments ?? 0) !== p.paidInstallments ||
+      (!!card?.chargesInterest && !!input.withoutInterest !== (p.monthlyRatePpm === 0))
+    );
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
     const result = validatePurchaseForm({
@@ -89,22 +102,27 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
       return;
     }
     setErrors({});
-    // Editar no pasa por la confirmación: la vista previa usa la tasa actual de la tarjeta, no la pactada.
-    if (purchase) {
+    // Editar solo textos no toca ninguna cifra: se guarda directo.
+    if (purchase && !changesNumbers(result.value, purchase)) {
       save(result.value);
       return;
     }
-    const previewed = api.previewPurchase(card!, result.value);
+    const previewed = api.previewPurchase(card!, result.value, purchase);
     if (!previewed.ok) {
       setFormError(previewed.error);
       return;
     }
+    let warning: string | null = null;
+    if (purchase) {
+      setChecking(true);
+      warning = feeImpactText(await api.purchaseChangeImpact(purchase.id, result.value).finally(() => setChecking(false)));
+    }
     setShowAll(false);
-    setConfirming({ input: result.value, preview: previewed.preview });
+    setConfirming({ input: result.value, preview: previewed.preview, warning });
   }
 
   if (confirming) {
-    const { preview, input } = confirming;
+    const { preview, input, warning } = confirming;
     const rows = showAll ? preview.installments : preview.installments.slice(0, PREVIEW_ROWS);
     const hasInterest = BigInt(preview.totalInterest) > 0n;
     return (
@@ -129,6 +147,7 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
         )}
         {hasInterest && preview.remainingCount > 1 && <p className={styles.help}>La cuota baja cada mes porque los intereses se calculan sobre lo que aún debes.</p>}
         {hasInterest && <p className={styles.help}>Es un estimado: tu banco puede calcular un poco distinto.</p>}
+        {warning && <p className={styles.warning}>{warning}</p>}
         {error && (
           <p role="alert" className={ui.alert}>
             {error}
@@ -170,7 +189,7 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
           {error ?? formError}
         </p>
       )}
-      <button type="submit" className={ui.button} disabled={pending}>
+      <button type="submit" className={ui.button} disabled={pending || checking}>
         {pending ? 'Guardando…' : purchase ? 'Guardar cambios' : 'Continuar'}
       </button>
       <button type="button" className={ui.buttonGhost} onClick={onCancel}>
@@ -192,7 +211,7 @@ export function PurchaseForm({ cards, today, api, initialCardId, purchase, onDon
 
   return (
     <form className={`${ui.card} ${form.form} ${styles.tall}`} onSubmit={handleSubmit} noValidate>
-      <ChipGroup label="Tarjeta" options={cards.map((c) => ({ value: c.id, label: c.name }))} value={cardId} onChange={setCardId} />
+      {!purchase && <ChipGroup label="Tarjeta" options={cards.map((c) => ({ value: c.id, label: c.name }))} value={cardId} onChange={setCardId} />}
       {errors.card && <p className={ui.error}>{errors.card}</p>}
       {textFields}
       <div className={ui.field}>

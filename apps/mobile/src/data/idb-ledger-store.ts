@@ -141,6 +141,28 @@ export class IdbLedgerStore {
     return applied;
   }
 
+  /** Deshace un pago de manejo: borra el gasto y retrocede el mes pagado juntos; si la tarjeta ya cambió, no escribe nada. */
+  async writeFeeUndo(before: CreditCard, after: CreditCard, paymentId: string): Promise<boolean> {
+    let applied = false;
+    await atomically(this.db, ['transactions', 'creditCards'], (tx, track) => {
+      const cards = tx.objectStore('creditCards');
+      track(
+        cards.get(before.id).then((row) => {
+          if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
+          track(tx.objectStore('transactions').delete(paymentId));
+          track(cards.put(toStoredCreditCard(after)));
+          applied = true;
+        }),
+      );
+    });
+    return applied;
+  }
+
+  /** Ids de todos los pagos de manejo (`cf-…`), sin leer las filas. */
+  async feePaymentIds(): Promise<string[]> {
+    return this.db.getAllKeys('transactions', IDBKeyRange.bound('cf-', 'cf-\uffff'));
+  }
+
   /** Borra la tarjeta y sus compras, todo o nada. Los movimientos reales se conservan. */
   deleteCard(cardId: string): Promise<void> {
     return atomically(this.db, ['creditCards', 'cardPurchases'], (tx, track) => {

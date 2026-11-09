@@ -21,11 +21,13 @@ import {
 import {
   addMonthsISO,
   endOfMonthISO,
+  formatMonthLong,
   monthName,
   todayISO,
   type ActionResult,
   type CardInput,
   type CardView,
+  type FeeImpact,
   type PayFeeInput,
   type PayInstallmentInput,
   type PurchaseInput,
@@ -37,6 +39,7 @@ import {
   type InstallmentView,
   type SettleInput,
 } from '@finanzas/ui';
+import { latestFeeMonths } from './card-payment-id';
 import { INT64_MAX, MAX_CARD_PURCHASES, MAX_CREDIT_CARDS, MAX_TEXT } from './limits';
 import { AppError, CURRENCY, assertTextLength, isoDay, notFound, parseDay, parseMoney, toMessage, writeAction, type ServiceContext } from './support';
 
@@ -48,6 +51,12 @@ const BEGINNING = new Date(Date.UTC(2000, 0, 1));
 /** Lo que una compra toma de su tarjeta. */
 type CardTerms = Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>;
 
+/** Lo ya pactado en una compra: editarla no lo cambia por lo que hoy diga la tarjeta. */
+type AgreedTerms = Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'firstDueDate' | 'dueDayAnchor'>;
+
+const NO_FEE_IMPACT: FeeImpact = { lostCount: 0, lostAmount: '0', changedCount: 0 };
+const LATE_PURCHASE = 'Esa compra es de un mes con manejo ya pagado, así que no se generó una cuota nueva.';
+
 /** Con el año entre 2000 y 2100 la fecha se guarda y se recupera siempre igual. */
 function parseCardDate(raw: string): Date {
   const date = parseDay(raw);
@@ -57,12 +66,12 @@ function parseCardDate(raw: string): Date {
 }
 
 /** Arma la compra validando textos, fechas y que todas sus cifras quepan en lo que se guarda. */
-function buildPurchase(id: string, input: PurchaseInput, card: CardTerms, existing?: CardPurchase): CardPurchase {
+function buildPurchase(id: string, input: PurchaseInput, card: CardTerms, existing?: AgreedTerms): CardPurchase {
   assertTextLength('description', input.description);
   assertTextLength('category', input.category);
   const purchaseDate = parseCardDate(input.purchaseDate);
   const firstDueDate = parseCardDate(input.firstDueDate);
-  const sameDates = existing && existing.purchaseDate.getTime() === purchaseDate.getTime() && existing.firstDueDate.getTime() === firstDueDate.getTime();
+  const sameDates = existing && existing.purchaseDate === isoDay(purchaseDate) && existing.firstDueDate === isoDay(firstDueDate);
   const isSuggested = defaultFirstDueDate(purchaseDate, card.dueDay).getTime() === firstDueDate.getTime();
   const purchase = CardPurchase.create({
     id,
@@ -75,7 +84,7 @@ function buildPurchase(id: string, input: PurchaseInput, card: CardTerms, existi
     firstDueDate,
     monthlyRatePpm: input.withoutInterest ? 0 : (existing?.monthlyRatePpm || card.monthlyRatePpm),
     paidInstallments: input.paidInstallments ?? 0,
-    dueDayAnchor: sameDates ? existing.dueDayAnchor : isSuggested ? card.dueDay : undefined,
+    dueDayAnchor: sameDates ? (existing.dueDayAnchor ?? undefined) : isSuggested ? card.dueDay : undefined,
   });
   if (planSummary(buildInstallmentPlan(purchase)).totalToPay.amount > INT64_MAX) throw new AppError(TOO_BIG);
   return purchase;
@@ -86,9 +95,9 @@ function toInstallmentView(i: Installment): InstallmentView {
 }
 
 /** Vista previa de lo que se va a confirmar. Pura: no lee ni escribe nada. */
-export function previewPurchase(card: CardTerms, input: PurchaseInput): PurchasePreviewResult {
+export function previewPurchase(card: CardTerms, input: PurchaseInput, agreed?: AgreedTerms): PurchasePreviewResult {
   try {
-    const purchase = buildPurchase('vista-previa', input, card);
+    const purchase = buildPurchase('vista-previa', input, card, agreed);
     const pending = buildInstallmentPlan(purchase).slice(purchase.paidInstallments);
     const sum = (pick: (i: Installment) => Money) => Money.sum(pending.map(pick), CURRENCY).amount.toString();
     const preview: PurchasePreview = {
@@ -163,6 +172,7 @@ function toPurchaseView(p: CardPurchase): PurchaseView {
     firstDueDate: isoDay(p.firstDueDate),
     monthlyRatePpm: p.monthlyRatePpm,
     closedOn: p.closedOn ? isoDay(p.closedOn) : null,
+    dueDayAnchor: p.dueDayAnchor ?? null,
     next: next && toInstallmentView(next),
     settle: offer && { capital: offer.capital.amount.toString(), interest: offer.interest.amount.toString(), total: offer.total.amount.toString() },
   };
@@ -177,6 +187,20 @@ function nextDue(purchases: readonly PurchaseView[]): CardView['next'] {
   return { amount: amount.toString(), date };
 }
 
+const agreedOf = (p: CardPurchase): AgreedTerms => ({
+  monthlyRatePpm: p.monthlyRatePpm,
+  purchaseDate: isoDay(p.purchaseDate),
+  firstDueDate: isoDay(p.firstDueDate),
+  dueDayAnchor: p.dueDayAnchor ?? null,
+});
+
+/** El mes anterior a `month` ('YYYY-MM'). */
+function previousMonth(month: string): string {
+  return addMonthsISO(`${month}-01`, -1).slice(0, 7);
+}
+
+const monthOf = (date: Date): string => isoDay(date).slice(0, 7);
+
 /** Fin del mes siguiente: hasta ahí se listan las cuotas de manejo pendientes. */
 function feeHorizon(today: string): Date {
   return parseDay(endOfMonthISO(addMonthsISO(today, 1)));
@@ -186,12 +210,13 @@ export class CardService {
   constructor(private readonly ctx: ServiceContext) {}
 
   async list(): Promise<CardView[]> {
-    const [cards, purchases] = await Promise.all([this.ctx.cards.findAll(), this.ctx.purchases.findAll()]);
+    const [cards, purchases, feeIds] = await Promise.all([this.ctx.cards.findAll(), this.ctx.purchases.findAll(), this.ctx.ledger.feePaymentIds()]);
     const horizon = feeHorizon(todayISO(this.ctx.now()));
-    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, horizon));
+    const lastPaid = latestFeeMonths(feeIds);
+    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, horizon, lastPaid.get(card.id) ?? null));
   }
 
-  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], horizon: Date): CardView {
+  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], horizon: Date, lastPaidFeeMonth: string | null): CardView {
     const own = purchases.filter((p) => p.cardId === card.id);
     const views = own.map(toPurchaseView).sort(byPendingFirst);
     return {
@@ -209,6 +234,7 @@ export class CardService {
       next: nextDue(views),
       purchases: views,
       pendingFees: cardFeesDue(card, purchases, BEGINNING, horizon).map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: f.amount.amount.toString() })),
+      lastPaidFeeMonth,
     };
   }
 
@@ -237,14 +263,81 @@ export class CardService {
     }
   }
 
-  previewPurchase(card: CardTerms, input: PurchaseInput): PurchasePreviewResult {
-    return previewPurchase(card, input);
+  previewPurchase(card: CardTerms, input: PurchaseInput, agreed?: AgreedTerms): PurchasePreviewResult {
+    return previewPurchase(card, input, agreed);
+  }
+
+  /** Qué cuotas de manejo sin pagar se perderían o cambiarían al guardar estos datos de la tarjeta. */
+  async cardChangeImpact(cardId: string, input: CardInput): Promise<FeeImpact> {
+    const existing = await this.ctx.cards.findById(cardId);
+    if (!existing) return NO_FEE_IMPACT;
+    let after: CreditCard;
+    try {
+      after = this.buildCard(cardId, input, nextFeeStart(existing, feeOf(input), this.currentMonth()), existing.feesSettledThrough);
+    } catch {
+      return NO_FEE_IMPACT; // Datos inválidos: los rechaza el guardado, con su propio mensaje.
+    }
+    const purchases = await this.ctx.purchases.findByCard(cardId);
+    return this.compareFees(existing, purchases, after, purchases);
+  }
+
+  /** Qué cuotas de manejo sin pagar se perderían al borrar esta compra. */
+  purchaseRemovalImpact(purchaseId: string): Promise<FeeImpact> {
+    return this.purchaseImpact(purchaseId, () => null);
+  }
+
+  /** Qué cuotas de manejo sin pagar se perderían si la compra pasa a tener estos datos. */
+  purchaseChangeImpact(purchaseId: string, input: PurchaseInput): Promise<FeeImpact> {
+    return this.purchaseImpact(purchaseId, (p) => CardPurchase.create({ ...p.toProps(), purchaseDate: parseCardDate(input.purchaseDate), firstDueDate: parseCardDate(input.firstDueDate) }));
+  }
+
+  private async purchaseImpact(purchaseId: string, change: (p: CardPurchase) => CardPurchase | null): Promise<FeeImpact> {
+    const purchase = await this.ctx.purchases.findById(purchaseId);
+    const card = purchase && (await this.ctx.cards.findById(purchase.cardId));
+    if (!purchase || !card) return NO_FEE_IMPACT;
+    let changed: CardPurchase | null;
+    try {
+      changed = change(purchase);
+    } catch {
+      return NO_FEE_IMPACT;
+    }
+    const all = await this.ctx.purchases.findByCard(card.id);
+    const after = all.filter((p) => p.id !== purchaseId).concat(changed ?? []);
+    return this.compareFees(card, all, card, after);
+  }
+
+  private compareFees(before: CreditCard, beforePurchases: readonly CardPurchase[], after: CreditCard, afterPurchases: readonly CardPurchase[]): FeeImpact {
+    const horizon = feeHorizon(todayISO(this.ctx.now()));
+    const next = new Map(cardFeesDue(after, afterPurchases, BEGINNING, horizon).map((f) => [f.month, f.amount.amount]));
+    let lostCount = 0;
+    let lostAmount = 0n;
+    let changedCount = 0;
+    for (const fee of cardFeesDue(before, beforePurchases, BEGINNING, horizon)) {
+      const amount = next.get(fee.month);
+      if (amount === undefined) {
+        lostCount += 1;
+        lostAmount += fee.amount.amount;
+      } else if (amount !== fee.amount.amount) changedCount += 1;
+    }
+    return { lostCount, lostAmount: lostAmount.toString(), changedCount };
+  }
+
+  private currentMonth(): string {
+    return todayISO(this.ctx.now()).slice(0, 7);
+  }
+
+  /** Una compra nueva en un mes ya cerrado no genera manejo (solo aplica si cobra por movimiento y ese mes no tenía compras). */
+  private latePurchaseNotice(card: CreditCard, others: readonly CardPurchase[], purchase: CardPurchase): string | undefined {
+    if (card.fee.kind !== 'ON_MOVEMENT' || card.feesSettledThrough === undefined) return undefined;
+    const month = monthOf(purchase.purchaseDate);
+    if (month > card.feesSettledThrough || month < card.feeStartMonth) return undefined;
+    return others.some((p) => monthOf(p.purchaseDate) === month) ? undefined : LATE_PURCHASE;
   }
 
   createCard(input: CardInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       if ((await this.ctx.cards.findAll()).length >= MAX_CREDIT_CARDS) throw new AppError(`Llegaste al máximo de ${MAX_CREDIT_CARDS} tarjetas.`);
-      const card = this.buildCard(this.ctx.newId(), input, todayISO(this.ctx.now()).slice(0, 7));
+      const card = this.buildCard(this.ctx.newId(), input, this.currentMonth());
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
     });
@@ -254,7 +347,7 @@ export class CardService {
   updateCard(id: string, input: CardInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const existing = await this.requireCard(id);
-      const feeStart = nextFeeStart(existing, feeOf(input), todayISO(this.ctx.now()).slice(0, 7));
+      const feeStart = nextFeeStart(existing, feeOf(input), this.currentMonth());
       const card = this.buildCard(id, input, feeStart, existing.feesSettledThrough);
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
@@ -274,7 +367,11 @@ export class CardService {
       if ((await this.ctx.purchases.findAll()).length >= MAX_CARD_PURCHASES) {
         throw new AppError(`Llegaste al máximo de ${MAX_CARD_PURCHASES.toLocaleString('es-CO')} compras con tarjeta.`);
       }
-      await this.ctx.purchases.save(buildPurchase(this.ctx.newId(), input, await this.cardTerms(input.cardId)));
+      const card = await this.requireCard(input.cardId);
+      const purchase = buildPurchase(this.ctx.newId(), input, this.termsOf(card));
+      const others = await this.ctx.purchases.findByCard(card.id);
+      await this.ctx.purchases.save(purchase);
+      return this.latePurchaseNotice(card, others, purchase);
     });
   }
 
@@ -282,6 +379,7 @@ export class CardService {
   updatePurchase(id: string, input: PurchaseInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const existing = await this.requirePurchase(id);
+      if (input.cardId !== existing.cardId) throw new AppError('Una compra no se puede pasar a otra tarjeta.');
       if (existing.paidInstallments > 0 || existing.isClosed) {
         this.assertLockedFieldsUnchanged(existing, input);
         assertTextLength('description', input.description);
@@ -289,7 +387,11 @@ export class CardService {
         await this.ctx.purchases.save(CardPurchase.create({ ...existing.toProps(), description: input.description, category: input.category }));
         return;
       }
-      await this.ctx.purchases.save(buildPurchase(id, input, await this.cardTerms(input.cardId), existing));
+      const card = await this.requireCard(existing.cardId);
+      const purchase = buildPurchase(id, input, this.termsOf(card), agreedOf(existing));
+      const others = (await this.ctx.purchases.findByCard(card.id)).filter((p) => p.id !== id);
+      await this.ctx.purchases.save(purchase);
+      return monthOf(purchase.purchaseDate) === monthOf(existing.purchaseDate) ? undefined : this.latePurchaseNotice(card, others, purchase);
     });
   }
 
@@ -317,6 +419,7 @@ export class CardService {
       const plan = buildInstallmentPlan(purchase)[number - 1]!;
       const interest = input.interest === undefined ? plan.interest : this.parseInterest(input.interest);
       const paidOn = parseCardDate(input.paidOn);
+      if (paidOn.getTime() < purchase.purchaseDate.getTime()) throw new AppError('El pago no puede ser anterior a la compra.');
       await this.assertAccount(input.fromAccountId);
       const suffix = ` (cuota ${number}/${purchase.installments})`;
       const put = this.payments(purchase, input.fromAccountId, paidOn, {
@@ -386,10 +489,27 @@ export class CardService {
         accountId: input.fromAccountId,
         amount,
         date: paidOn,
-        description: fitDescription(`Manejo ${card.name}`, ` (${month})`),
+        description: fitDescription(`Manejo ${card.name}`, ` (${formatMonthLong(month)})`),
         category: INTEREST_CATEGORY,
       });
       await this.ctx.ledger.writeFeePayment(card, CreditCard.create({ ...card.toProps(), feesSettledThrough: month }), payment);
+    });
+  }
+
+  /**
+   * Deshace el último pago de manejo que realmente se hizo. El marcador solo dice "hasta qué mes va lo
+   * saldado", así que se deja en el mes justo anterior al deshecho: todo lo de antes sigue saldado y solo
+   * esa cuota vuelve a quedar pendiente, aunque el mes anterior no haya tenido cobro.
+   */
+  undoLastFee(cardId: string, input: { month?: string } = {}): Promise<ActionResult> {
+    return writeAction(this.ctx, async () => {
+      const card = await this.requireCard(cardId);
+      const latest = latestFeeMonths(await this.ctx.ledger.feePaymentIds()).get(card.id);
+      if (input.month !== undefined && input.month !== latest) return; // Segundo toque.
+      if (latest === undefined) throw new AppError('Esta tarjeta no tiene pagos de manejo para deshacer.');
+      const previous = previousMonth(latest);
+      const feesSettledThrough = previous >= card.feeStartMonth ? previous : undefined;
+      await this.ctx.ledger.writeFeeUndo(card, CreditCard.create({ ...card.toProps(), feesSettledThrough }), `cf-${card.id}-${latest}`);
     });
   }
 
@@ -442,8 +562,7 @@ export class CardService {
     if (!unchanged) throw new AppError('Esta compra ya tiene cuotas pagadas: solo puedes cambiar la descripción y la categoría.');
   }
 
-  private async cardTerms(cardId: string): Promise<CardTerms> {
-    const card = await this.requireCard(cardId);
+  private termsOf(card: CreditCard): CardTerms {
     return { id: card.id, dueDay: card.dueDay, monthlyRatePpm: card.rate?.monthlyPpm ?? 0 };
   }
 

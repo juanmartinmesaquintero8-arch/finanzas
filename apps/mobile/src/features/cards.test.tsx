@@ -70,10 +70,10 @@ describe('Programados: Tarjetas', () => {
     await screen.findByText('Debes en total $0');
     expect(screen.queryByRole('button', { name: /Pagar manejo/ })).toBeNull();
     await services.cards.addPurchase({ cardId: card.id, description: 'Libro', amount: '50000', installments: 1, purchaseDate: '2026-03-02', firstDueDate: '2026-04-15', withoutInterest: true });
-    expect(await screen.findByRole('button', { name: 'Pagar manejo de marzo' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de marzo' }));
+    expect(await screen.findByRole('button', { name: 'Pagar manejo de marzo 2026' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de marzo 2026' }));
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Pagar manejo de marzo' })).toBeNull());
+    await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Pagar manejo de marzo 2026' })).toBeNull());
   });
 
   it('con una cuenta tipo crédito avisa para no contar doble', async () => {

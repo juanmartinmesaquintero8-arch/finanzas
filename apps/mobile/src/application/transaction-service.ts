@@ -6,19 +6,13 @@ import {
   isMonthKey,
   normalizeCategory,
   type CreateTransactionInput as FactoryInput,
+  type Transaction,
 } from '@finanzas/domain';
 import type { ActionResult, CreateTransactionInput, Transaction as TransactionView, TransactionPage } from '@finanzas/ui';
+import { cardPaymentDescriber } from './card-payment-id';
 import { decodeCursor, encodeCursor } from './cursor';
 import { AppError, assertTextLength, notFound, parseMoney, writeAction, type ServiceContext } from './support';
 import { toTransactionView } from './views';
-
-/** Los pagos de tarjeta llevan ids fijos: se deshacen desde la tarjeta para que la deuda y el saldo sigan cuadrando. */
-const CARD_PAYMENT_ID = /^(cp|ci|cf)-/;
-const CARD_PAYMENT_LOCKED = 'Este pago viene de una tarjeta. Para deshacerlo, usa «Deshacer último pago» en la tarjeta.';
-
-function assertNotCardPayment(id: string): void {
-  if (CARD_PAYMENT_ID.test(id)) throw new AppError(CARD_PAYMENT_LOCKED);
-}
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -44,7 +38,7 @@ export class TransactionService {
 
   async get(id: string): Promise<TransactionView | null> {
     const t = await this.ctx.transactions.findById(id);
-    return t ? toTransactionView(t) : null;
+    return t ? this.withCardPayment([t]).then(([view]) => view!) : null;
   }
 
   /** Historial por cursor (keyset): pide una fila extra para saber si hay página siguiente. */
@@ -60,7 +54,7 @@ export class TransactionService {
     const items = hasMore ? rows.slice(0, limit) : rows;
     const last = items[items.length - 1];
     return {
-      items: items.map(toTransactionView),
+      items: await this.withCardPayment(items),
       nextCursor: hasMore && last ? encodeCursor({ date: last.date, id: last.id }) : null,
     };
   }
@@ -72,18 +66,31 @@ export class TransactionService {
   /** Reemplaza el movimiento reconstruyéndolo con la Factory, así se aplican todas las reglas aunque cambie el tipo. */
   update(id: string, input: CreateTransactionInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
-      assertNotCardPayment(id);
       if (!(await this.ctx.transactions.findById(id))) throw notFound('ese movimiento');
+      const payment = await cardPaymentDescriber(this.ctx)(id);
+      if (payment) throw new AppError(payment.message);
       await this.save(id, input);
     });
   }
 
   remove(id: string): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
-      assertNotCardPayment(id);
       if (!(await this.ctx.transactions.findById(id))) throw notFound('ese movimiento');
+      const payment = await cardPaymentDescriber(this.ctx)(id);
+      if (payment && !payment.canDelete) throw new AppError(payment.message);
       await this.ctx.transactions.delete(id);
     });
+  }
+
+  /** Marca los pagos de tarjeta: una sola consulta por compra o tarjeta, sin importar cuántos pagos tenga la página. */
+  private withCardPayment(items: readonly Transaction[]): Promise<TransactionView[]> {
+    const describe = cardPaymentDescriber(this.ctx);
+    return Promise.all(
+      items.map(async (t) => {
+        const cardPayment = await describe(t.id);
+        return cardPayment ? { ...toTransactionView(t), cardPayment } : toTransactionView(t);
+      }),
+    );
   }
 
   private async save(id: string, input: CreateTransactionInput): Promise<void> {
