@@ -3,6 +3,8 @@ import {
   TransactionFactory,
   UnknownAccountError,
   assertDomain,
+  isMonthKey,
+  normalizeCategory,
   type CreateTransactionInput as FactoryInput,
 } from '@finanzas/domain';
 import type { ActionResult, CreateTransactionInput, Transaction as TransactionView, TransactionPage } from '@finanzas/ui';
@@ -38,10 +40,14 @@ export class TransactionService {
   }
 
   /** Historial por cursor (keyset): pide una fila extra para saber si hay página siguiente. */
-  async page(query: { accountId?: string; limit?: number; cursor?: string } = {}): Promise<TransactionPage> {
+  async page(query: { accountId?: string; limit?: number; cursor?: string; month?: string; category?: string; until?: string } = {}): Promise<TransactionPage> {
     const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE);
     const after = query.cursor ? decodeCursor(query.cursor) : undefined;
-    const rows = await this.ctx.transactions.findPage({ accountId: query.accountId, limit: limit + 1, after });
+    const month = isMonthKey(query.month) ? query.month : undefined;
+    // La categoría solo se acepta junto con un mes: así la consulta siempre queda acotada.
+    const categoryKey = month && query.category ? normalizeCategory(query.category).key : undefined;
+    const until = query.until && /^\d{4}-\d{2}-\d{2}$/.test(query.until) ? query.until : undefined;
+    const rows = await this.ctx.transactions.findPage({ accountId: query.accountId, limit: limit + 1, after, month, categoryKey, until });
     const hasMore = rows.length > limit;
     const items = hasMore ? rows.slice(0, limit) : rows;
     const last = items[items.length - 1];

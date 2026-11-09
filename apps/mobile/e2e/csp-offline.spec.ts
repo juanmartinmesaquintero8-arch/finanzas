@@ -88,7 +88,19 @@ test('sin conexión, la app recargada vuelve a abrir la pantalla principal', asy
 });
 
 // Cada pantalla es su propia página HTML con sus propias huellas: se abren una por una, en frío.
-const ROUTES = ['agregar/', 'ajustes/', 'historial/', 'programados/', 'cuentas/nueva/', 'cuentas/editar/', 'movimientos/editar/'];
+const ROUTES = [
+  'agregar/',
+  'ajustes/',
+  'historial/',
+  // Las dos vistas nuevas del Historial: el gasto por categoría y el historial filtrado desde una fila.
+  'historial/?vista=gasto',
+  'historial/?vista=gasto&mes=2026-10',
+  'historial/?mes=2026-10&categoria=mercado',
+  'programados/',
+  'cuentas/nueva/',
+  'cuentas/editar/',
+  'movimientos/editar/',
+];
 
 for (const route of ROUTES) {
   test(`/finanzas/${route} abre sin violaciones de CSP`, async ({ page }) => {
@@ -99,6 +111,20 @@ for (const route of ROUTES) {
     await expectNoViolations(page, consoleErrors);
   });
 }
+
+test('sin conexión, "En qué gasto" vuelve a abrir y muestra el estado vacío', async ({ page, context }) => {
+  const consoleErrors = await watchViolations(page);
+  await page.goto('historial/?vista=gasto');
+  await expect(page.getByRole('heading', { level: 2, name: /\d{4}$/ })).toBeVisible();
+  await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Vista' })).toBeVisible();
+  await expect(page.getByText(/Todavía no hay gastos en/)).toBeVisible();
+  await expectNoViolations(page, consoleErrors);
+});
 
 test('una dirección que no existe muestra la página 404, sin violaciones de CSP', async ({ page, baseURL }) => {
   const missingUrl = new URL('esta-pagina-no-existe/', baseURL).href;

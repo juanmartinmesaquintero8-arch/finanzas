@@ -8,6 +8,7 @@ import { BackupService } from './backup-service';
 import { ChangeBus } from './change-bus';
 import { DataService } from './data-service';
 import { ScheduledService } from './scheduled-service';
+import { SpendingService } from './spending-service';
 import { SummaryService } from './summary-service';
 import type { ServiceContext } from './support';
 import { TransactionService } from './transaction-service';
@@ -24,6 +25,7 @@ export interface AppServices {
   transactions: TransactionService;
   scheduled: ScheduledService;
   summary: SummaryService;
+  spending: SpendingService;
   backup: BackupService;
   data: DataService;
   bus: ChangeBus;
@@ -48,6 +50,7 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     transactions: new TransactionService(ctx),
     scheduled: new ScheduledService(ctx),
     summary: new SummaryService(ctx),
+    spending: new SpendingService(ctx),
     backup: new BackupService(ctx),
     data: new DataService(ctx),
     bus,
