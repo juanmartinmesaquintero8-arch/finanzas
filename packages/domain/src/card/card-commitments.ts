@@ -79,9 +79,9 @@ export function cardCommitments(
 
   for (const purchase of purchases) {
     const card = cardsById.get(purchase.cardId);
-    if (!card || purchase.isClosed) continue;
+    if (!card || purchase.isClosed || purchase.paidInstallments >= purchase.installments) continue;
     for (const inst of buildInstallmentPlan(purchase)) {
-      if (inst.number <= purchase.paidInstallments || inst.dueDate.getTime() > toTime) continue;
+      if (inst.number <= purchase.paidInstallments || inst.dueDate.getTime() > toTime || inst.total.isZero()) continue;
       out.push({
         scheduledExpenseId: purchase.id,
         kind: 'CARD_INSTALLMENT',
@@ -93,7 +93,8 @@ export function cardCommitments(
     }
   }
 
-  const beginning = new Date(Date.UTC(1, 0, 1));
+  // Las tarjetas empiezan en 2000 como pronto (ver CreditCard), así que nada vence antes.
+  const beginning = new Date(Date.UTC(2000, 0, 1));
   for (const card of cards) {
     for (const fee of cardFeesDue(card, purchases, beginning, to)) {
       out.push({

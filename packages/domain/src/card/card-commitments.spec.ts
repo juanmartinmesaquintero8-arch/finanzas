@@ -162,6 +162,25 @@ describe('cardCommitments', () => {
     expect(fees.every((f) => f.accountId === 'bancolombia' && f.amount.amount === 10n)).toBe(true);
   });
 
+  it('una cuota exactamente en to entra; un día después no', () => {
+    const p = purchase({ installments: 1, amount: 100 });
+    expect(cardCommitments([card()], [p], d('2026-01-01'), d('2026-02-15'))).toHaveLength(1);
+    expect(cardCommitments([card()], [p], d('2026-01-01'), d('2026-02-14'))).toHaveLength(0);
+  });
+
+  it('una compra ON_MOVEMENT el último día del mes cobra ese mes', () => {
+    const c = card({ fee: { kind: 'ON_MOVEMENT', amount: cop(7) } });
+    const p = purchase({ purchaseDate: d('2026-01-31'), firstDueDate: d('2026-02-15') });
+    const fees = cardFeesDue(c, [p], d('2026-01-01'), d('2026-12-31'));
+    expect(fees.map((f) => f.month)).toEqual(['2026-01']);
+  });
+
+  it('con menos monto que cuotas omite las cuotas de 0 pesos', () => {
+    const out = cardCommitments([card()], [purchase({ amount: 2, installments: 5 })], d('2026-01-01'), d('2026-12-31'));
+    expect(out).toHaveLength(1);
+    expect(out[0].amount.amount).toBe(2n);
+  });
+
   it('ordenadas por fecha; ignora compras de tarjetas desconocidas', () => {
     const c = card({ fee: { kind: 'FIXED_MONTHLY', amount: cop(10) } });
     const p = purchase();

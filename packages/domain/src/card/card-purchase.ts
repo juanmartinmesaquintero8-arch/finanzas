@@ -1,6 +1,7 @@
 import { Money } from '../money/money';
 import { startOfDayUTC } from '../shared/date';
 import { assertDomain } from '../shared/domain-validation.error';
+import { MAX_MV_PPM } from './interest-rate';
 
 export const MAX_INSTALLMENTS = 72;
 
@@ -17,6 +18,8 @@ export interface CardPurchaseProps {
   monthlyRatePpm: number;
   paidInstallments: number;
   closedOn?: Date;
+  /** Día de pago de la tarjeta al crear la compra (1-31); mantiene el 29-31 aunque la primera fecha caiga en fin de mes corto. */
+  dueDayAnchor?: number;
 }
 
 function assertValidDate(date: Date, message: string): void {
@@ -37,6 +40,7 @@ export class CardPurchase {
     readonly paidInstallments: number,
     readonly category?: string,
     readonly closedOn?: Date,
+    readonly dueDayAnchor?: number,
   ) {}
 
   static create(props: CardPurchaseProps): CardPurchase {
@@ -52,7 +56,13 @@ export class CardPurchase {
     const purchaseDate = startOfDayUTC(props.purchaseDate);
     const firstDueDate = startOfDayUTC(props.firstDueDate);
     assertDomain(firstDueDate.getTime() >= purchaseDate.getTime(), 'La primera cuota no puede ser anterior a la compra');
-    assertDomain(Number.isSafeInteger(props.monthlyRatePpm) && props.monthlyRatePpm >= 0, 'La tasa mensual debe ser un entero de 0 en adelante');
+    assertDomain(Number.isSafeInteger(props.monthlyRatePpm) && props.monthlyRatePpm >= 0 && props.monthlyRatePpm <= MAX_MV_PPM,
+      'La tasa mensual debe ser un entero entre 0 y 10 %',
+    );
+    assertDomain(
+      props.dueDayAnchor === undefined || (Number.isInteger(props.dueDayAnchor) && props.dueDayAnchor >= 1 && props.dueDayAnchor <= 31),
+      'El día de pago de referencia debe estar entre 1 y 31',
+    );
     assertDomain(
       Number.isInteger(props.paidInstallments) && props.paidInstallments >= 0 && props.paidInstallments <= props.installments,
       'Las cuotas pagadas deben ir de 0 al total de cuotas',
@@ -74,6 +84,7 @@ export class CardPurchase {
       props.paidInstallments,
       props.category?.trim() || undefined,
       closedOn,
+      props.dueDayAnchor,
     );
   }
 
@@ -93,11 +104,15 @@ export class CardPurchase {
 
   /** Deshace el último pago; sin pagos, devuelve la misma compra. */
   undoLastPayment(): CardPurchase {
+    assertDomain(!this.isClosed, 'La compra está cerrada');
     if (this.paidInstallments === 0) return this;
     return CardPurchase.create({ ...this.toProps(), paidInstallments: this.paidInstallments - 1 });
   }
 
   close(on: Date): CardPurchase {
+    assertDomain(!this.isClosed, 'La compra ya está cerrada');
+    assertValidDate(on, 'La fecha de cierre no es válida');
+    assertDomain(startOfDayUTC(on).getTime() >= this.purchaseDate.getTime(), 'El cierre no puede ser anterior a la compra');
     return CardPurchase.create({ ...this.toProps(), closedOn: on });
   }
 
@@ -114,6 +129,7 @@ export class CardPurchase {
       monthlyRatePpm: this.monthlyRatePpm,
       paidInstallments: this.paidInstallments,
       closedOn: this.closedOn,
+      dueDayAnchor: this.dueDayAnchor,
     };
   }
 }

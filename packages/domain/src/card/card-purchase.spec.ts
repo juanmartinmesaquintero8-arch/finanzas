@@ -94,6 +94,33 @@ describe('CardPurchase', () => {
     expect(() => CardPurchase.create(base).close(new Date('x'))).toThrow(DomainValidationError);
   });
 
+  it('undoLastPayment se rechaza si la compra está cerrada', () => {
+    const closed = CardPurchase.create({ ...base, paidInstallments: 2 }).close(d('2026-12-01'));
+    expect(() => closed.undoLastPayment()).toThrow(DomainValidationError);
+    expect(() => CardPurchase.create(base).close(d('2026-12-01')).undoLastPayment()).toThrow(DomainValidationError);
+  });
+
+  it('close rechaza una compra ya cerrada y una fecha anterior a la compra', () => {
+    const closed = CardPurchase.create(base).close(d('2026-12-01'));
+    expect(() => closed.close(d('2026-12-02'))).toThrow(DomainValidationError);
+    expect(() => CardPurchase.create(base).close(d('2026-11-07'))).toThrow(DomainValidationError);
+    expect(CardPurchase.create(base).close(d('2026-11-08')).closedOn).toEqual(d('2026-11-08'));
+  });
+
+  it('la tasa mensual no puede superar el tope M.V. (10 %)', () => {
+    expect(() => CardPurchase.create({ ...base, monthlyRatePpm: 100_001 })).toThrow(DomainValidationError);
+    expect(CardPurchase.create({ ...base, monthlyRatePpm: 100_000 }).monthlyRatePpm).toBe(100_000);
+  });
+
+  it('dueDayAnchor opcional de 1 a 31 y se conserva', () => {
+    expect(CardPurchase.create(base).dueDayAnchor).toBeUndefined();
+    expect(CardPurchase.create({ ...base, dueDayAnchor: 31 }).dueDayAnchor).toBe(31);
+    expect(CardPurchase.create({ ...base, dueDayAnchor: 31 }).markPaid(1).dueDayAnchor).toBe(31);
+    for (const bad of [0, 32, 1.5, Number.NaN]) {
+      expect(() => CardPurchase.create({ ...base, dueDayAnchor: bad })).toThrow(DomainValidationError);
+    }
+  });
+
   it('toProps devuelve lo necesario para recrearla', () => {
     const p = CardPurchase.create({ ...base, paidInstallments: 2, category: 'Hogar' });
     expect(CardPurchase.create(p.toProps()).toProps()).toEqual(p.toProps());

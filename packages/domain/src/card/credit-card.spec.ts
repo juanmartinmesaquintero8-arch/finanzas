@@ -53,6 +53,14 @@ describe('CreditCard', () => {
     expect(() => CreditCard.create({ ...base, feeStartMonth })).toThrow(DomainValidationError);
   });
 
+  it('acepta años de 2000 a 2100 y rechaza el resto', () => {
+    expect(CreditCard.create({ ...base, feeStartMonth: '2000-01' }).feeStartMonth).toBe('2000-01');
+    expect(CreditCard.create({ ...base, feeStartMonth: '2100-12' }).feeStartMonth).toBe('2100-12');
+    expect(() => CreditCard.create({ ...base, feeStartMonth: '1999-12' })).toThrow(DomainValidationError);
+    expect(() => CreditCard.create({ ...base, feeStartMonth: '2101-01' })).toThrow(DomainValidationError);
+    expect(() => CreditCard.create({ ...base, feesSettledThrough: '0001-01' })).toThrow(DomainValidationError);
+  });
+
   it('rechaza feesSettledThrough con formato inválido', () => {
     expect(() => CreditCard.create({ ...base, feesSettledThrough: '2026-99' })).toThrow(DomainValidationError);
   });

@@ -37,6 +37,41 @@ describe('defaultFirstDueDate', () => {
   });
 });
 
+describe('fechas con dueDayAnchor (días 29 a 31)', () => {
+  const dates = (o: Parameters<typeof make>[0]) => iso(buildInstallmentPlan(make(o)));
+  it('día 31 con compra en enero: 28 feb, 31 mar, 30 abr, 31 may', () => {
+    expect(dates({ installments: 4, purchaseDate: d('2026-01-10'), firstDueDate: d('2026-02-28'), dueDayAnchor: 31 })).toEqual([
+      '2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31',
+    ]);
+  });
+  it('día 31 con compra en marzo: 30 abr, 31 may, 30 jun, 31 jul', () => {
+    expect(dates({ installments: 4, purchaseDate: d('2026-03-10'), firstDueDate: d('2026-04-30'), dueDayAnchor: 31 })).toEqual([
+      '2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31',
+    ]);
+  });
+  it('día 30 con compra en enero: 28 feb, 30 mar, 30 abr', () => {
+    expect(dates({ installments: 3, purchaseDate: d('2026-01-10'), firstDueDate: d('2026-02-28'), dueDayAnchor: 30 })).toEqual([
+      '2026-02-28', '2026-03-30', '2026-04-30',
+    ]);
+  });
+  it('año bisiesto: 29 feb y luego 31 mar', () => {
+    expect(dates({ installments: 2, purchaseDate: d('2028-01-10'), firstDueDate: d('2028-02-29'), dueDayAnchor: 31 })).toEqual(['2028-02-29', '2028-03-31']);
+  });
+  it('si la primera fecha se editó (no es fin de mes), el ancla se ignora', () => {
+    expect(dates({ installments: 3, purchaseDate: d('2026-01-10'), firstDueDate: d('2026-02-15'), dueDayAnchor: 31 })).toEqual([
+      '2026-02-15', '2026-03-15', '2026-04-15',
+    ]);
+  });
+  it('una primera fecha en el 28 de febrero con ancla 28 no cambia', () => {
+    expect(dates({ installments: 2, purchaseDate: d('2026-01-10'), firstDueDate: d('2026-02-28'), dueDayAnchor: 28 })).toEqual(['2026-02-28', '2026-03-28']);
+  });
+  it('sin ancla se comporta como antes (acumula el recorte)', () => {
+    expect(dates({ installments: 4, purchaseDate: d('2026-01-10'), firstDueDate: d('2026-02-28') })).toEqual([
+      '2026-02-28', '2026-03-28', '2026-04-28', '2026-05-28',
+    ]);
+  });
+});
+
 describe('buildInstallmentPlan', () => {
   it('control: 1.200.000 a 12 cuotas al 2 % M.V. = 156.000 de interés', () => {
     const plan = buildInstallmentPlan(make({ monthlyRatePpm: 20_000 }));
@@ -69,9 +104,9 @@ describe('buildInstallmentPlan', () => {
   });
 
   it('el interés redondea a la mitad hacia arriba con enteros', () => {
-    const plan = buildInstallmentPlan(make({ amount: 1, installments: 1, monthlyRatePpm: 500_000 }));
+    const plan = buildInstallmentPlan(make({ amount: 5, installments: 1, monthlyRatePpm: 100_000 }));
     expect(plan[0].interest.amount).toBe(1n);
-    const p2 = buildInstallmentPlan(make({ amount: 1, installments: 1, monthlyRatePpm: 499_999 }));
+    const p2 = buildInstallmentPlan(make({ amount: 4, installments: 1, monthlyRatePpm: 100_000 }));
     expect(p2[0].interest.amount).toBe(0n);
   });
 
@@ -171,6 +206,10 @@ describe('cardDebt', () => {
     const a = make({ monthlyRatePpm: 20_000, paidInstallments: 2 });
     const b = make({ id: 'p2', amount: 100, installments: 3 });
     expect(cardDebt([a, b]).amount).toBe(1_000_000n + 100n);
+  });
+  it('no mezcla monedas', () => {
+    const usd = CardPurchase.create({ ...make().toProps(), id: 'u', amount: Money.of(5, 'USD') });
+    expect(() => cardDebt([make(), usd])).toThrow();
   });
   it('no suma compras cerradas ni pagadas', () => {
     const closed = make({ id: 'p3' }).close(d('2026-03-01'));

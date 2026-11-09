@@ -58,6 +58,11 @@ export function buildInstallmentPlan(purchase: CardPurchase): Installment[] {
   const q = debt / BigInt(count);
   const r = debt % BigInt(count);
   const first = purchase.firstDueDate;
+  // Si la primera fecha cayó en fin de mes recortado, el día de pago original manda (31 ene -> 28 feb, 31 mar).
+  const lastDayOfFirst = daysInMonthUTC(first.getUTCFullYear(), first.getUTCMonth());
+  const anchor = purchase.dueDayAnchor;
+  const baseDay =
+    anchor !== undefined && first.getUTCDate() === lastDayOfFirst && anchor > lastDayOfFirst ? anchor : first.getUTCDate();
   const plan: Installment[] = [];
   for (let k = 1; k <= count; k++) {
     const capital = k === 1 ? q + r : q;
@@ -65,7 +70,7 @@ export function buildInstallmentPlan(purchase: CardPurchase): Installment[] {
     const interest = interestOn(balance, monthlyRatePpm);
     plan.push({
       number: k,
-      dueDate: dateInMonth(first.getUTCFullYear(), first.getUTCMonth() + (k - 1), first.getUTCDate()),
+      dueDate: dateInMonth(first.getUTCFullYear(), first.getUTCMonth() + (k - 1), baseDay),
       capital: Money.of(capital, currency),
       interest: Money.of(interest, currency),
       total: Money.of(capital + interest, currency),
@@ -106,8 +111,8 @@ export function settleOffer(purchase: CardPurchase): SettleOffer {
 
 /** Deuda de las tarjetas: capital pendiente, sin interés futuro. Las compras cerradas no suman. */
 export function cardDebt(purchases: readonly CardPurchase[], currency = 'COP'): Money {
-  return Money.of(
-    purchases.reduce((acc, p) => acc + remainingCapital(p), 0n),
+  return Money.sum(
+    purchases.map((p) => Money.of(remainingCapital(p), p.amount.currency)),
     purchases[0]?.amount.currency ?? currency,
   );
 }

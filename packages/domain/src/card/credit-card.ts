@@ -10,7 +10,7 @@ export type CardFee =
 /** Mes calendario en formato `YYYY-MM`. */
 export type YearMonth = string;
 
-const YEAR_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const YEAR_MONTH = /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/;
 
 export interface CreditCardProps {
   id: string;
