@@ -164,7 +164,7 @@ export class IdbLedgerStore {
     });
   }
 
-  /** Borra cuentas, movimientos y gastos programados. Conserva los ajustes (meta). */
+  /** Borra todos los datos (cuentas, movimientos, programados, tarjetas y compras). Conserva los ajustes (meta). */
   clearAll(): Promise<void> {
     return this.replaceAll({ accounts: [], transactions: [], scheduledExpenses: [] });
   }

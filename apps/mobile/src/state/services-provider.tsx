@@ -6,6 +6,9 @@ import { createServices, type AppServices } from '@/application/create-services'
 import { openFinanzasDb, type OpenHooks } from '@/data/database';
 import { requestPersistentStorage } from '@/pwa/storage';
 
+/** Tras este tiempo sin abrir la base se pide cerrar las otras ventanas. */
+const SLOW_OPEN_MS = 5000;
+
 const ServicesContext = createContext<AppServices | null>(null);
 
 /** Abre la base del teléfono, pide que no la borren y arma los servicios. */
@@ -32,18 +35,30 @@ export function ServicesProvider({
 
   useEffect(() => {
     let cancelled = false;
+    // Una pestaña congelada en segundo plano puede no avisar nunca el bloqueo: si tarda, se avisa igual.
+    const slow = setTimeout(() => !cancelled && setBlocked(true), SLOW_OPEN_MS);
     loadServices({ onBlocked: () => !cancelled && setBlocked(true) }).then(
-      (s) => !cancelled && setServices(s),
-      () => !cancelled && setFailed(true),
+      (s) => {
+        clearTimeout(slow);
+        if (!cancelled) {
+          setBlocked(false);
+          setServices(s);
+        }
+      },
+      () => {
+        clearTimeout(slow);
+        if (!cancelled) setFailed(true);
+      },
     );
     return () => {
       cancelled = true;
+      clearTimeout(slow);
     };
   }, [loadServices]);
 
   if (failed) {
     return (
-      <ErrorCard message="No pudimos abrir el almacenamiento de tu celular. Si estás en una ventana privada, abre la app en una normal. No se borró nada: tus datos siguen guardados." />
+      <ErrorCard message="No pudimos abrir el almacenamiento de tu celular. No se borró nada: la app no tocó tus datos." />
     );
   }
   if (!services && blocked) {

@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const DB_NAME = 'mis-finanzas';
+/** La versión nunca debe bajar: un navegador con la base en v2 se negaría a abrir una v1. */
 export const DB_VERSION = 2;
 
 /** Filas tal como se guardan en IndexedDB: los montos son string de bigint, las fechas ISO. */

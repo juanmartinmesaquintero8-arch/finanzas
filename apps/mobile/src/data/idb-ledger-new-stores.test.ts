@@ -72,6 +72,19 @@ describe('almacenes nuevos en las operaciones de todo el libro', () => {
     expect((await db.getAll('cardPurchases')).map((r) => r.id)).toEqual(['mine-p']);
   });
 
+  it('removeSample no deja huérfanos: lo propio que cuelga de lo de ejemplo se va con ello', async () => {
+    await db.put('scheduledIncomes', income('mine-i2', `${SAMPLE_PREFIX}a`));
+    await db.put('creditCards', card('mine-c', `${SAMPLE_PREFIX}a`));
+    await db.put('cardPurchases', purchase('mine-p', 'mine-c'));
+    await db.put('creditCards', card('mine-c2', 'mine-a'));
+    await db.put('cardPurchases', purchase('mine-p2', 'mine-c2'));
+    await db.put('cardPurchases', purchase(`${SAMPLE_PREFIX}p9`, 'mine-c2'));
+    expect(await createServices({ db }).data.removeSample()).toEqual({ ok: true });
+    expect(await db.getAll('scheduledIncomes')).toEqual([]);
+    expect((await db.getAll('creditCards')).map((r) => r.id)).toEqual(['mine-c2']);
+    expect((await db.getAll('cardPurchases')).map((r) => r.id)).toEqual(['mine-p2']);
+  });
+
   it('eraseAll los vacía', async () => {
     await fillNew();
     const s = createServices({ db });
