@@ -1,5 +1,6 @@
 import { Account } from '../account/account';
 import { ScheduledExpense } from '../scheduled/scheduled-expense';
+import { ScheduledIncome } from '../scheduled/scheduled-income';
 import { Transaction } from '../transaction/transaction';
 
 /** Puertos de persistencia: el dominio define el contrato, la infraestructura lo implementa. */
@@ -49,6 +50,13 @@ export interface ScheduledExpenseRepository {
   findAll(): Promise<ScheduledExpense[]>;
   findById(id: string): Promise<ScheduledExpense | null>;
   save(expense: ScheduledExpense): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface ScheduledIncomeRepository {
+  findAll(): Promise<ScheduledIncome[]>;
+  findById(id: string): Promise<ScheduledIncome | null>;
+  save(income: ScheduledIncome): Promise<void>;
   delete(id: string): Promise<void>;
 }
 

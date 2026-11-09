@@ -1,4 +1,4 @@
-import { Account, Money, ScheduledExpense, TransactionFactory } from '@finanzas/domain';
+import { Account, Money, ScheduledExpense, ScheduledIncome, TransactionFactory } from '@finanzas/domain';
 import { addDays, addMonthsISO, todayISO } from '@finanzas/ui';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
 import { CURRENCY, parseDay } from './support';
@@ -38,7 +38,11 @@ export function generateSampleData(now: Date): LedgerSnapshot {
     ScheduledExpense.create({ id: `${SAMPLE_PREFIX}internet`, description: 'Internet', amount: cop(90_000), accountId: `${SAMPLE_PREFIX}nu`, frequency: 'MONTHLY', startDate: parseDay(addDays(today, 10)) }),
   ];
 
-  return { accounts, transactions, scheduledExpenses };
+  const scheduledIncomes = [
+    ScheduledIncome.create({ id: `${SAMPLE_PREFIX}sueldo`, description: 'Sueldo', amount: cop(2_500_000), accountId: `${SAMPLE_PREFIX}bancolombia`, frequency: 'MONTHLY', startDate: parseDay(addDays(today, 12)), category: 'Salario' }),
+  ];
+
+  return { accounts, transactions, scheduledExpenses, scheduledIncomes };
 }
 
 export const isSampleId = (id: string): boolean => id.startsWith(SAMPLE_PREFIX);

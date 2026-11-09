@@ -42,7 +42,7 @@ describe('Ajustes: hacer copia de seguridad', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hacer copia de seguridad' }));
     expect(await screen.findByRole('status')).toHaveTextContent(/tu copia está lista/i);
     const delivered = deliver.mock.calls[0]![0] as { text: string; fileName: string };
-    expect(JSON.parse(delivered.text)).toMatchObject({ version: 1, accounts: [{ name: 'Bancolombia' }] });
+    expect(JSON.parse(delivered.text)).toMatchObject({ version: 2, accounts: [{ name: 'Bancolombia' }] });
     expect(delivered.fileName).toBe('mis-finanzas-2026-03-10.json');
     expect(await services.backup.lastBackupAt()).not.toBeNull();
     expect(await screen.findByText(/última copia/i)).toBeInTheDocument();
@@ -197,5 +197,30 @@ describe('Ajustes: la copia debe poder recuperarse', () => {
       db.close();
       await deleteDB(name);
     }
+  });
+});
+
+describe('Ajustes: resumen de la copia a recuperar', () => {
+  const copy = (incomes: unknown[]) =>
+    JSON.stringify({
+      version: 2,
+      exportedAt: '2026-03-10T15:00:00.000Z',
+      accounts: [{ id: 'a1', name: 'Nu', type: 'BANK', initialBalance: { amount: '1', currency: 'COP' } }],
+      transactions: [],
+      scheduledExpenses: [],
+      scheduledIncomes: incomes,
+    });
+  const income = { id: 'i1', description: 'Sueldo', amount: { amount: '5', currency: 'COP' }, accountId: 'a1', frequency: 'MONTHLY', startDate: '2026-04-30', endDate: null, settledThrough: null };
+
+  it('menciona los ingresos programados solo cuando la copia los trae', async () => {
+    await renderWithServices(<SettingsScreen deliver={vi.fn()} />, services);
+    await userEvent.upload(await screen.findByLabelText('Recuperar copia'), fileOf(copy([income])));
+    expect(await screen.findByText(/Trae 1 cuenta, 0 movimientos, 0 gastos programados y 1 ingreso programado/)).toBeInTheDocument();
+  });
+
+  it('sin ingresos el texto no cambia', async () => {
+    await renderWithServices(<SettingsScreen deliver={vi.fn()} />, services);
+    await userEvent.upload(await screen.findByLabelText('Recuperar copia'), fileOf(copy([])));
+    expect(await screen.findByText(/Trae 1 cuenta, 0 movimientos y 0 gastos programados \(hecha el/)).toBeInTheDocument();
   });
 });

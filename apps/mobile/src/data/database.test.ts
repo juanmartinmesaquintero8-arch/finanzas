@@ -116,7 +116,7 @@ describe('actualización v1 -> v2', () => {
     await txs.save(TransactionFactory.create({ type: 'EXPENSE', id: 't3', accountId: 'a3', amount: cop(1), date: new Date('2026-03-03T00:00:00Z'), description: 'x' }));
     await sched.save(ScheduledExpense.create({ id: 's2', description: 'Luz', amount: cop(100), accountId: 'a3', frequency: 'MONTHLY', startDate: new Date('2026-05-01T00:00:00Z') }));
     const snap = await ledger.readAll();
-    expect(Object.keys(snap).sort()).toEqual(['accounts', 'scheduledExpenses', 'transactions']);
+    expect(Object.keys(snap).sort()).toEqual(['accounts', 'scheduledExpenses', 'scheduledIncomes', 'transactions']);
     expect(snap.accounts.map((a) => a.id).sort()).toEqual(['a1', 'a2', 'a3']);
     expect(snap.transactions.map((t) => t.id).sort()).toEqual(['t1', 't2', 't3']);
     expect(snap.scheduledExpenses.map((s) => s.id).sort()).toEqual(['s1', 's2']);

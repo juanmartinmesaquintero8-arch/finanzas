@@ -251,11 +251,12 @@ describe('IdbLedgerStore', () => {
       accounts: [account('a', 10)],
       transactions: [expense('e', 'a', '2026-03-02T00:00:00Z')],
       scheduledExpenses: [sched('s1')],
+      scheduledIncomes: [],
     });
     const all = await store().readAll();
     expect([all.accounts.length, all.transactions.length, all.scheduledExpenses.length]).toEqual([1, 1, 1]);
 
-    await store().replaceAll({ accounts: [account('z')], transactions: [], scheduledExpenses: [] });
+    await store().replaceAll({ accounts: [account('z')], transactions: [], scheduledExpenses: [], scheduledIncomes: [] });
     const after = await store().readAll();
     expect(after.accounts.map((a) => a.id)).toEqual(['z']);
     expect(after.transactions).toEqual([]);
@@ -272,7 +273,7 @@ describe('IdbLedgerStore', () => {
 
   it('clearAll conserva el aviso de copia (meta) pero borra los datos', async () => {
     await store().setMeta('lastBackupAt', 'x');
-    await store().replaceAll({ accounts: [account('a')], transactions: [], scheduledExpenses: [] });
+    await store().replaceAll({ accounts: [account('a')], transactions: [], scheduledExpenses: [], scheduledIncomes: [] });
     await store().clearAll();
     expect(await store().getMeta('lastBackupAt')).toBe('x');
   });

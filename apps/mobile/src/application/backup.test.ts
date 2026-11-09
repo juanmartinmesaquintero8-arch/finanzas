@@ -258,11 +258,13 @@ describe('límites', () => {
       accounts: [Account.create({ id: crypto.randomUUID(), name: 'Propia', type: 'BANK', initialBalance: Money.of(5, 'COP') })],
       transactions: [],
       scheduledExpenses: [],
+      scheduledIncomes: [],
     };
     const mixed = {
       accounts: [...sample.accounts, ...own.accounts],
       transactions: sample.transactions,
       scheduledExpenses: sample.scheduledExpenses,
+      scheduledIncomes: sample.scheduledIncomes,
     };
     const parsed = parseBackup(serializeBackup(mixed, NOW));
     expect(parsed).toMatchObject({
@@ -384,6 +386,7 @@ describe('copia recuperable: comprobación al exportar', () => {
       scheduledExpenses: [
         ScheduledExpense.create({ id: crypto.randomUUID(), description: 'g'.repeat(160), amount: cop(1n), accountId: 'demo-efectivo', frequency: 'MONTHLY', startDate: new Date('2026-04-01T00:00:00Z') }),
       ],
+      scheduledIncomes: [],
     };
     await s.backup.restore(snapshot);
     const created = await s.backup.create();

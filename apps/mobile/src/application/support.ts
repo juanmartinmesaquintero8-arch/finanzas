@@ -6,6 +6,7 @@ import {
   startOfDayUTC,
   type AccountRepository,
   type ScheduledExpenseRepository,
+  type ScheduledIncomeRepository,
   type TransactionRepository,
 } from '@finanzas/domain';
 import type { ActionResult } from '@finanzas/ui';
@@ -20,6 +21,7 @@ export interface ServiceContext {
   accounts: AccountRepository & { delete(id: string): Promise<void> };
   transactions: TransactionRepository;
   scheduled: ScheduledExpenseRepository;
+  scheduledIncomes: ScheduledIncomeRepository;
   ledger: IdbLedgerStore;
   bus: ChangeBus;
   now: () => Date;

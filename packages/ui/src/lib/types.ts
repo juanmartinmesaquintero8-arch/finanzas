@@ -41,7 +41,12 @@ export interface ScheduledExpense {
   startDate: string;
   endDate: string | null;
   settledThrough: string | null;
+  /** Solo la app móvil la usa; la API aún no la envía. */
+  category?: string | null;
 }
+
+/** Un ingreso programado se ve igual que un gasto programado. */
+export type ScheduledIncome = ScheduledExpense;
 
 export interface Summary {
   netWorth: MoneyView;
@@ -58,7 +63,15 @@ export interface Projection {
   commitments: { scheduledExpenseId: string; description: string; accountId: string; date: string; amount: MoneyView }[];
   accounts: { accountId: string; name: string; balance: MoneyView; committed: MoneyView; available: MoneyView }[];
   timeline: { date: string; balance: MoneyView }[];
+  /** Solo la app móvil los calcula (ingresos programados); la API no los envía. */
+  expectedIncome?: MoneyView;
+  availableWithIncome?: MoneyView;
+  lowestWithIncome?: { date: string; balance: MoneyView };
 }
+
+/** Proyección con los datos de ingresos esperados ya presentes. */
+export type ProjectionWithIncome = Projection &
+  Required<Pick<Projection, 'expectedIncome' | 'availableWithIncome' | 'lowestWithIncome'>>;
 
 export interface CreateAccountInput {
   name: string;
@@ -87,7 +100,10 @@ export interface CreateScheduledExpenseInput {
   frequency: Frequency;
   startDate: string;
   endDate?: string;
+  category?: string;
 }
+
+export type CreateScheduledIncomeInput = CreateScheduledExpenseInput;
 
 /** Una fila de "En qué gasto": montos como texto de entero (bigint), porcentajes solo para mostrar. */
 export interface SpendingRowView {

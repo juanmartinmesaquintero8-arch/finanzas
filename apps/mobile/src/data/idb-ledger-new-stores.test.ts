@@ -1,3 +1,4 @@
+import { Money, ScheduledIncome, TransactionFactory } from '@finanzas/domain';
 import { deleteDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServices } from '@/application/create-services';
@@ -45,22 +46,32 @@ const counts = async () => [
 describe('almacenes nuevos en las operaciones de todo el libro', () => {
   it('replaceAll (recuperar copia sin ellos) los deja vacíos', async () => {
     await fillNew();
-    await new IdbLedgerStore(db).replaceAll({ accounts: [], transactions: [], scheduledExpenses: [] });
+    await new IdbLedgerStore(db).replaceAll({ accounts: [], transactions: [], scheduledExpenses: [], scheduledIncomes: [] });
     expect(await counts()).toEqual([0, 0, 0]);
   });
 
   it('replaceAll con filas extra las guarda', async () => {
+    const entity = ScheduledIncome.create({
+      id: 'x', description: 'Sueldo', amount: Money.of(5n, 'COP'), accountId: 'a', frequency: 'MONTHLY', startDate: new Date('2026-04-30T00:00:00Z'), category: 'Salario',
+    });
     await new IdbLedgerStore(db).replaceAll(
-      { accounts: [], transactions: [], scheduledExpenses: [] },
-      { scheduledIncomes: [income('x', 'a')], creditCards: [card('c', 'a')], cardPurchases: [purchase('p', 'c')] },
+      { accounts: [], transactions: [], scheduledExpenses: [], scheduledIncomes: [entity] },
+      { creditCards: [card('c', 'a')], cardPurchases: [purchase('p', 'c')] },
     );
     expect(await counts()).toEqual([1, 1, 1]);
+    expect((await new IdbLedgerStore(db).readAll()).scheduledIncomes).toEqual([entity]);
   });
 
   it('clearAll los vacía', async () => {
     await fillNew();
     await new IdbLedgerStore(db).clearAll();
     expect(await counts()).toEqual([0, 0, 0]);
+  });
+
+  it('readAll lee los ingresos programados guardados', async () => {
+    await db.put('scheduledIncomes', income('mine-i', 'mine-a'));
+    const all = await new IdbLedgerStore(db).readAll();
+    expect(all.scheduledIncomes.map((i) => [i.id, i.description])).toEqual([['mine-i', 'Nómina']]);
   });
 
   it('removeSample quita sólo lo de ejemplo y conserva lo propio de los almacenes nuevos', async () => {
@@ -90,5 +101,18 @@ describe('almacenes nuevos en las operaciones de todo el libro', () => {
     const s = createServices({ db });
     expect(await s.data.eraseAll()).toEqual({ ok: true });
     expect(await counts()).toEqual([0, 0, 0]);
+  });
+});
+
+describe('receive (Ya lo recibí)', () => {
+  it('es atómico: si una fila falla no se escribe nada', async () => {
+    const entity = ScheduledIncome.create({ id: 'i1', description: 'Sueldo', amount: Money.of(5n, 'COP'), accountId: 'a', frequency: 'MONTHLY', startDate: new Date('2026-04-30T00:00:00Z') });
+    const store = new IdbLedgerStore(db);
+    await db.put('scheduledIncomes', income('i1', 'a'));
+    const ok = TransactionFactory.create({ type: 'INCOME', id: 'ok', accountId: 'a', amount: Money.of(5n, 'COP'), date: new Date('2026-04-30T00:00:00Z'), description: 'x' });
+    const bad = { ...ok, id: undefined } as unknown as typeof ok; // clave inválida
+    await expect(store.receive(entity.markSettled(new Date('2026-04-30T00:00:00Z')), [ok, bad])).rejects.toBeDefined();
+    expect(await db.count('transactions')).toBe(0);
+    expect((await db.get('scheduledIncomes', 'i1'))?.settledThrough).toBeNull();
   });
 });

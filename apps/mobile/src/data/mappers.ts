@@ -4,12 +4,13 @@ import {
   FREQUENCIES,
   Money,
   ScheduledExpense,
+  ScheduledIncome,
   TransactionFactory,
   type AccountType,
   type Frequency,
   type Transaction,
 } from '@finanzas/domain';
-import type { StoredAccount, StoredScheduledExpense, StoredTransaction } from './database';
+import type { StoredAccount, StoredScheduledExpense, StoredScheduledIncome, StoredTransaction } from './database';
 
 /** Separador de la clave compuesta `cuenta|fecha`. */
 const KEY_SEP = '|';
@@ -77,6 +78,7 @@ export function toStoredScheduled(s: ScheduledExpense): StoredScheduledExpense {
     startDate: s.startDate.toISOString(),
     endDate: s.endDate?.toISOString() ?? null,
     settledThrough: s.settledThrough?.toISOString() ?? null,
+    category: s.category ?? null,
   };
 }
 
@@ -90,6 +92,36 @@ export function toScheduled(row: StoredScheduledExpense): ScheduledExpense {
     startDate: new Date(row.startDate),
     endDate: row.endDate ? new Date(row.endDate) : undefined,
     settledThrough: row.settledThrough ? new Date(row.settledThrough) : undefined,
+    category: row.category ?? undefined,
+  });
+}
+
+export function toStoredIncome(s: ScheduledIncome): StoredScheduledIncome {
+  return {
+    id: s.id,
+    description: s.description,
+    amount: s.amount.amount.toString(),
+    currency: s.amount.currency,
+    accountId: s.accountId,
+    frequency: s.frequency,
+    startDate: s.startDate.toISOString(),
+    endDate: s.endDate?.toISOString() ?? null,
+    settledThrough: s.settledThrough?.toISOString() ?? null,
+    category: s.category ?? null,
+  };
+}
+
+export function toIncome(row: StoredScheduledIncome): ScheduledIncome {
+  return ScheduledIncome.create({
+    id: row.id,
+    description: row.description,
+    amount: Money.of(BigInt(row.amount), row.currency),
+    accountId: row.accountId,
+    frequency: row.frequency as Frequency,
+    startDate: new Date(row.startDate),
+    endDate: row.endDate ? new Date(row.endDate) : undefined,
+    settledThrough: row.settledThrough ? new Date(row.settledThrough) : undefined,
+    category: row.category ?? undefined,
   });
 }
 

@@ -5,14 +5,16 @@ import {
   type Account,
   type BalanceSnapshot,
   type ScheduledExpense,
+  type ScheduledIncome,
 } from '@finanzas/domain';
-import { todayISO, type Projection } from '@finanzas/ui';
+import { todayISO, type ProjectionWithIncome } from '@finanzas/ui';
 import { CURRENCY, isoDay, parseDay, type ServiceContext } from './support';
 
 interface Base {
   accounts: Account[];
   snapshot: BalanceSnapshot;
   scheduled: ScheduledExpense[];
+  incomes: ScheduledIncome[];
 }
 
 /**
@@ -25,11 +27,11 @@ export class SummaryService {
   private readonly engine = new ProjectionEngine(CURRENCY);
   private version = -1;
   private base?: Promise<Base>;
-  private projections = new Map<string, Promise<Projection>>();
+  private projections = new Map<string, Promise<ProjectionWithIncome>>();
 
   constructor(private readonly ctx: ServiceContext) {}
 
-  projection(to: string): Promise<Projection> {
+  projection(to: string): Promise<ProjectionWithIncome> {
     this.syncVersion();
     const from = parseDay(todayISO(this.ctx.now()));
     const target = parseDay(to);
@@ -52,19 +54,20 @@ export class SummaryService {
 
   private loadBase(): Promise<Base> {
     this.base ??= (async () => {
-      const [accounts, deltas, scheduled] = await Promise.all([
+      const [accounts, deltas, scheduled, incomes] = await Promise.all([
         this.ctx.accounts.findAll(),
         this.ctx.transactions.balanceDeltas(),
         this.ctx.scheduled.findAll(),
+        this.ctx.scheduledIncomes.findAll(),
       ]);
-      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled };
+      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled, incomes };
     })();
     return this.base;
   }
 
-  private async compute(from: Date, to: Date): Promise<Projection> {
-    const { accounts, snapshot, scheduled } = await this.loadBase();
-    const projection = this.engine.project({ snapshot, scheduledExpenses: scheduled, from: startOfDayUTC(from), to });
+  private async compute(from: Date, to: Date): Promise<ProjectionWithIncome> {
+    const { accounts, snapshot, scheduled, incomes } = await this.loadBase();
+    const projection = this.engine.project({ snapshot, scheduledExpenses: scheduled, scheduledIncomes: incomes, from: startOfDayUTC(from), to });
     const names = new Map(accounts.map((a) => [a.id, a.name]));
     return {
       from: isoDay(projection.from),
@@ -88,6 +91,9 @@ export class SummaryService {
         available: a.available.toJSON(),
       })),
       timeline: projection.timeline.map((p) => ({ date: isoDay(p.date), balance: p.balance.toJSON() })),
+      expectedIncome: projection.expectedIncome.toJSON(),
+      availableWithIncome: projection.availableWithIncome.toJSON(),
+      lowestWithIncome: { date: isoDay(projection.lowestWithIncome.date), balance: projection.lowestWithIncome.balance.toJSON() },
     };
   }
 }

@@ -6,6 +6,7 @@ import {
   InvalidMoneyError,
   Money,
   ScheduledExpense,
+  ScheduledIncome,
   TRANSACTION_TYPES,
   TransactionFactory,
   type AccountType,
@@ -18,12 +19,12 @@ import { MAX_IMPORT_TEXT, isInt64 } from './limits';
 import { toAccountView, toScheduledView, toTransactionView } from './views';
 
 /** Versión del formato del archivo. Subirla cuando cambie la forma de los datos. */
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 /** Tamaño máximo del archivo de copia (bytes). */
 export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 /** Cantidad máxima de elementos por lista. */
-export const MAX_ITEMS = { accounts: 500, transactions: 200_000, scheduledExpenses: 2_000 } as const;
+export const MAX_ITEMS = { accounts: 500, transactions: 200_000, scheduledExpenses: 2_000, scheduledIncomes: 2_000 } as const;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 export const UNUSABLE_PREFIX = 'La copia no se puede usar: ';
 const LABEL_MAX = 40;
@@ -36,12 +37,14 @@ export interface BackupFile {
   accounts: ReturnType<typeof toAccountView>[];
   transactions: ReturnType<typeof toTransactionView>[];
   scheduledExpenses: ReturnType<typeof toScheduledView>[];
+  scheduledIncomes: ReturnType<typeof toScheduledView>[];
 }
 
 export interface BackupSummary {
   accounts: number;
   transactions: number;
   scheduledExpenses: number;
+  scheduledIncomes: number;
   exportedAt: string;
 }
 
@@ -60,6 +63,7 @@ export function serializeBackup(snapshot: LedgerSnapshot, exportedAt: Date): str
     accounts: snapshot.accounts.map(toAccountView),
     transactions: snapshot.transactions.map(toTransactionView),
     scheduledExpenses: snapshot.scheduledExpenses.map(toScheduledView),
+    scheduledIncomes: snapshot.scheduledIncomes.map(toScheduledView),
   };
   return JSON.stringify(file);
 }
@@ -83,13 +87,14 @@ const str = (v: unknown): string => {
   if (typeof v !== 'string') throw new Invalid(DAMAGED);
   return v;
 };
-type Kind = 'account' | 'transaction' | 'scheduled';
+type Kind = 'account' | 'transaction' | 'scheduled' | 'income';
 /** Cómo nombrar el dato en los mensajes: «la cuenta «X»» o, si no hay texto que lo identifique, «una cuenta». */
 function labelOf(kind: Kind, identifier: unknown): string {
   const nouns = {
     account: ['la cuenta', 'una cuenta'],
     transaction: ['el movimiento', 'un movimiento'],
     scheduled: ['el gasto programado', 'un gasto programado'],
+    income: ['el ingreso programado', 'un ingreso programado'],
   } as const;
   const [named, generic] = nouns[kind];
   if (typeof identifier !== 'string' || identifier.trim().length === 0) return generic;
@@ -163,13 +168,14 @@ function parseTransaction(raw: unknown): Transaction {
   return TransactionFactory.create({ ...common, type, accountId: id(raw.accountId) });
 }
 
-function parseScheduled(raw: unknown): ScheduledExpense {
+/** Campos que comparten los gastos y los ingresos programados en el archivo. */
+function parseSchedule(raw: unknown, kind: 'scheduled' | 'income') {
   if (!isObj(raw)) throw new Invalid(DAMAGED);
   const endDate = optStr(raw.endDate);
   const settledThrough = optStr(raw.settledThrough);
-  const who = labelOf('scheduled', raw.description);
+  const who = labelOf(kind, raw.description);
   const amount = money(raw.amount, who);
-  return ScheduledExpense.create({
+  return {
     id: id(raw.id),
     description: text(raw.description, who),
     amount,
@@ -178,8 +184,12 @@ function parseScheduled(raw: unknown): ScheduledExpense {
     startDate: date(raw.startDate),
     endDate: endDate ? date(endDate) : undefined,
     settledThrough: settledThrough ? date(settledThrough) : undefined,
-  });
+    category: optText(raw.category, who),
+  };
 }
+
+const parseScheduled = (raw: unknown): ScheduledExpense => ScheduledExpense.create(parseSchedule(raw, 'scheduled'));
+const parseIncome = (raw: unknown): ScheduledIncome => ScheduledIncome.create(parseSchedule(raw, 'income'));
 
 function assertUniqueIds(items: readonly { id: string }[]): void {
   if (new Set(items.map((i) => i.id)).size !== items.length) {
@@ -206,10 +216,14 @@ export function parseBackup(text: string): ParsedBackup {
     const accountsRaw = arrayOf(json.accounts);
     const transactionsRaw = arrayOf(json.transactions);
     const scheduledRaw = arrayOf(json.scheduledExpenses);
+    // Las copias v1 no traen ingresos programados (valen vacío); desde la v2 la lista es obligatoria.
+    if (json.version >= 2 && json.scheduledIncomes === undefined) throw new Invalid(DAMAGED);
+    const incomesRaw = json.version >= 2 ? arrayOf(json.scheduledIncomes) : [];
     if (
       accountsRaw.length > MAX_ITEMS.accounts ||
       transactionsRaw.length > MAX_ITEMS.transactions ||
-      scheduledRaw.length > MAX_ITEMS.scheduledExpenses
+      scheduledRaw.length > MAX_ITEMS.scheduledExpenses ||
+      incomesRaw.length > MAX_ITEMS.scheduledIncomes
     ) {
       throw new Invalid(TOO_MANY);
     }
@@ -218,10 +232,12 @@ export function parseBackup(text: string): ParsedBackup {
     let accounts: Account[];
     let transactions: Transaction[];
     let scheduledExpenses: ScheduledExpense[];
+    let scheduledIncomes: ScheduledIncome[];
     try {
       accounts = accountsRaw.map(parseAccount);
       transactions = transactionsRaw.map(parseTransaction);
       scheduledExpenses = scheduledRaw.map(parseScheduled);
+      scheduledIncomes = incomesRaw.map(parseIncome);
     } catch (e) {
       if (e instanceof Invalid) throw e;
       if (e instanceof DomainValidationError || e instanceof InvalidMoneyError || e instanceof RangeError || e instanceof SyntaxError) {
@@ -233,18 +249,21 @@ export function parseBackup(text: string): ParsedBackup {
     assertUniqueIds(accounts);
     assertUniqueIds(transactions);
     assertUniqueIds(scheduledExpenses);
+    assertUniqueIds(scheduledIncomes);
     const known = new Set(accounts.map((a) => a.id));
-    const missingAccount = () => new Invalid('La copia tiene movimientos o gastos de una cuenta que no existe en ella.');
+    const missingAccount = () => new Invalid('La copia tiene movimientos, gastos o ingresos de una cuenta que no existe en ella.');
     for (const t of transactions) if (t.accountIds().some((id) => !known.has(id))) throw missingAccount();
     for (const s of scheduledExpenses) if (!known.has(s.accountId)) throw missingAccount();
+    for (const i of scheduledIncomes) if (!known.has(i.accountId)) throw missingAccount();
 
     return {
       ok: true,
-      snapshot: { accounts, transactions, scheduledExpenses },
+      snapshot: { accounts, transactions, scheduledExpenses, scheduledIncomes },
       summary: {
         accounts: accounts.length,
         transactions: transactions.length,
         scheduledExpenses: scheduledExpenses.length,
+        scheduledIncomes: scheduledIncomes.length,
         exportedAt: json.exportedAt,
       },
     };
