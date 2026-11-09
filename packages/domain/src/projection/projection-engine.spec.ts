@@ -225,3 +225,52 @@ describe('ProjectionEngine: fecha del último ingreso esperado', () => {
     expect(p.lastExpectedIncomeDate).toBeUndefined();
   });
 });
+
+describe('ProjectionEngine con compromisos extra (tarjetas)', () => {
+  const engine = new ProjectionEngine('COP');
+  const from = d('2026-10-24');
+  const to = d('2026-11-30');
+  const base = { snapshot, scheduledExpenses: scheduled, from, to };
+  const extra = [
+    { scheduledExpenseId: 'p1', kind: 'CARD_INSTALLMENT' as const, description: 'Nevera (1/3)', accountId: 'nu', date: d('2026-10-30'), amount: cop(100_000) },
+    { scheduledExpenseId: 'c1', kind: 'CARD_FEE' as const, description: 'Manejo Visa', accountId: 'bancolombia', date: d('2026-11-05'), amount: cop(30_000) },
+  ];
+
+  it('sin extraCommitments el resultado es idéntico al de siempre (también con arreglo vacío)', () => {
+    const plain = engine.project(base);
+    expect(JSON.stringify(engine.project({ ...base, extraCommitments: [] }))).toBe(JSON.stringify(plain));
+    expect(engine.project({ ...base, extraCommitments: undefined })).toStrictEqual(plain);
+    expect(plain.commitments.every((c) => !('kind' in c))).toBe(true);
+  });
+
+  it('entra en committed, disponible, faltante, compromisos y por cuenta', () => {
+    const p = engine.project({ ...base, extraCommitments: extra });
+    expect(p.committed).toEqual(cop(1_410_000));
+    expect(p.availableBalance).toEqual(cop(2_540_000));
+    expect(p.commitments).toHaveLength(5);
+    expect(p.commitments.map((c) => c.date.getTime())).toEqual([...p.commitments.map((c) => c.date.getTime())].sort((a, b) => a - b));
+    expect(p.commitments.find((c) => c.scheduledExpenseId === 'p1')?.kind).toBe('CARD_INSTALLMENT');
+    const byId = Object.fromEntries(p.accounts.map((a) => [a.accountId, a]));
+    expect(byId.nu.committed).toEqual(cop(180_000));
+    expect(byId.bancolombia.committed).toEqual(cop(1_230_000));
+  });
+
+  it('entra en la línea de tiempo y en el punto más bajo con ingresos', () => {
+    const income = ScheduledIncome.create({ id: 'i', description: 'Sueldo', amount: cop(500_000), accountId: 'nu', frequency: 'ONCE', startDate: d('2026-11-20') });
+    const p = engine.project({ ...base, scheduledIncomes: [income], extraCommitments: extra });
+    expect(p.timeline.map((t) => [t.date.toISOString().slice(0, 10), t.balance.amount])).toEqual([
+      ['2026-10-24', 3_950_000n],
+      ['2026-10-28', 3_910_000n],
+      ['2026-10-30', 3_810_000n],
+      ['2026-11-05', 2_580_000n],
+      ['2026-11-28', 2_540_000n],
+    ]);
+    expect(p.lowestWithIncome.balance).toEqual(cop(2_580_000));
+  });
+
+  it('un faltante por tarjeta se marca como faltante', () => {
+    const big = [{ scheduledExpenseId: 'p9', kind: 'CARD_INSTALLMENT' as const, description: 'Carro', accountId: 'nu', date: d('2026-11-01'), amount: cop(9_000_000) }];
+    expect(engine.project({ ...base, extraCommitments: big }).isShortfall).toBe(true);
+    expect(engine.project(base).isShortfall).toBe(false);
+  });
+});

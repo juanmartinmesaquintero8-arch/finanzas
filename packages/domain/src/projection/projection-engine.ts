@@ -4,8 +4,13 @@ import { ScheduledExpense } from '../scheduled/scheduled-expense';
 import { ScheduledIncome } from '../scheduled/scheduled-income';
 import { startOfDayUTC } from '../shared/date';
 
+/** Origen de un compromiso; los gastos programados no lo llevan. */
+export type CommitmentKind = 'CARD_INSTALLMENT' | 'CARD_FEE';
+
 export interface Commitment {
+  /** Id del origen: el gasto programado, o la compra / tarjeta cuando `kind` está presente. */
   scheduledExpenseId: string;
+  kind?: CommitmentKind;
   description: string;
   accountId: string;
   date: Date;
@@ -49,6 +54,8 @@ export interface ProjectionInput {
   snapshot: BalanceSnapshot;
   scheduledExpenses: readonly ScheduledExpense[];
   scheduledIncomes?: readonly ScheduledIncome[];
+  /** Compromisos ya calculados (p. ej. cuotas de tarjeta); se tratan igual que un gasto programado. */
+  extraCommitments?: readonly Commitment[];
   from: Date;
   to: Date;
 }
@@ -57,8 +64,8 @@ export interface ProjectionInput {
 export class ProjectionEngine {
   constructor(private readonly currency: string) {}
 
-  project({ snapshot, scheduledExpenses, scheduledIncomes = [], from, to }: ProjectionInput): Projection {
-    const commitments = this.expandCommitments(scheduledExpenses, from, to);
+  project({ snapshot, scheduledExpenses, scheduledIncomes = [], extraCommitments, from, to }: ProjectionInput): Projection {
+    const commitments = this.expandCommitments(scheduledExpenses, from, to, extraCommitments);
     const committed = Money.sum(commitments.map((c) => c.amount), this.currency);
     const availableBalance = snapshot.netWorth.subtract(committed);
     const incomes = this.expandIncomes(scheduledIncomes, from, to);
@@ -81,7 +88,12 @@ export class ProjectionEngine {
     };
   }
 
-  private expandCommitments(scheduled: readonly ScheduledExpense[], from: Date, to: Date): Commitment[] {
+  private expandCommitments(
+    scheduled: readonly ScheduledExpense[],
+    from: Date,
+    to: Date,
+    extra: readonly Commitment[] = [],
+  ): Commitment[] {
     return scheduled
       .flatMap((se) =>
         se.pendingOccurrences(from, to).map((date) => ({
@@ -92,6 +104,7 @@ export class ProjectionEngine {
           amount: se.amount,
         })),
       )
+      .concat(extra)
       .sort((a, b) => a.date.getTime() - b.date.getTime());
   }
 

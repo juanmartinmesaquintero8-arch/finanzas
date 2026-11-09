@@ -12,3 +12,4 @@ export * from './scheduled/scheduled-income';
 export * from './projection/projection-engine';
 export * from './ports/repositories';
 export * from './spending';
+export * from './card';
