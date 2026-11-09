@@ -97,6 +97,13 @@ export function formatShortDate(day: string): string {
   return `${d} ${MONTHS[m - 1]!.slice(0, 3)} ${y}`;
 }
 
+/** "15 dic" si es del año de `today`; si no, "15 nov 2027". */
+export function formatDueDate(day: string, today: string): string {
+  const { y, m, d } = parts(day);
+  const short = `${d} ${MONTHS[m - 1]!.slice(0, 3)}`;
+  return y === parts(today).y ? short : `${short} ${y}`;
+}
+
 /** "lunes 30 de marzo": el día de la semana, el número y el mes (sin "hoy" ni "ayer"). */
 export function formatWeekdayDate(day: string): string {
   const { m, d, dow } = parts(day);

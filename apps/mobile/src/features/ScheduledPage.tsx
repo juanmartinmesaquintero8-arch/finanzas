@@ -1,30 +1,43 @@
 'use client';
 
-import { ScheduledKindSwitch, ScheduledScreen, ui } from '@finanzas/ui';
+import { CardsScreen, ScheduledKindSwitch, ScheduledScreen, ui } from '@finanzas/ui';
 import { useSearchParams } from 'next/navigation';
 import { useServices } from '@/state/services-provider';
 import { useLive } from '@/state/use-live';
 import { routes } from './routes';
 
+type Kind = 'expenses' | 'incomes' | 'cards';
+
+function kindOf(tipo: string | null): Kind {
+  if (tipo === 'ingresos') return 'incomes';
+  return tipo === 'tarjetas' ? 'cards' : 'expenses';
+}
+
 export function ScheduledPage() {
   const services = useServices();
-  const incomes = useSearchParams().get('tipo') === 'ingresos';
+  const kind = kindOf(useSearchParams().get('tipo'));
   const { data } = useLive(
     async (s) => {
-      const [items, accounts] = await Promise.all([incomes ? s.scheduledIncomes.list() : s.scheduled.list(), s.accounts.list()]);
-      return { items, accounts, incomes };
+      const [items, cards, accounts] = await Promise.all([
+        kind === 'cards' ? [] : kind === 'incomes' ? s.scheduledIncomes.list() : s.scheduled.list(),
+        kind === 'cards' ? s.cards.list() : [],
+        s.accounts.list(),
+      ]);
+      return { items, cards, accounts, kind };
     },
-    [incomes],
+    [kind],
   );
   if (!data) return <p className={ui.empty}>Cargando…</p>;
   return (
     <>
       <h1 className={ui.pageTitle}>Programados</h1>
-      <ScheduledKindSwitch active={incomes ? 'incomes' : 'expenses'} expensesHref={routes.scheduled} incomesHref={routes.scheduledIncomes} />
+      <ScheduledKindSwitch active={kind} expensesHref={routes.scheduled} incomesHref={routes.scheduledIncomes} cardsHref={routes.scheduledCards} />
       {/* Al cambiar de pestaña, la lista de la otra sigue en pantalla hasta que llegan los datos nuevos: no se muestra. */}
-      {data.incomes !== incomes ? (
+      {data.kind !== kind ? (
         <p className={ui.empty}>Cargando…</p>
-      ) : incomes ? (
+      ) : kind === 'cards' ? (
+        <CardsScreen key="cards" cards={data.cards} accounts={data.accounts} today={services.today()} api={services.cards} />
+      ) : kind === 'incomes' ? (
         <ScheduledScreen
           key="incomes"
           kind="income"

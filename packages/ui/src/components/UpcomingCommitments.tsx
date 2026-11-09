@@ -21,7 +21,7 @@ export function UpcomingCommitments({ commitments, accountNames }: Props) {
       ) : (
         <ul className={`${ui.card} ${styles.list}`}>
           {next.map((c) => (
-            <li key={`${c.scheduledExpenseId}-${c.date}`} className={styles.row}>
+            <li key={`${c.scheduledExpenseId}-${c.date}-${c.description}`} className={styles.row}>
               <div className={styles.info}>
                 <span className={styles.desc}>{c.description}</span>
                 <span className={styles.meta}>

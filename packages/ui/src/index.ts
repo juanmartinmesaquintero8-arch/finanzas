@@ -3,6 +3,7 @@ export * from './lib/types';
 export * from './lib/format';
 export * from './lib/validation';
 export * from './lib/domain-helpers';
+export * from './lib/cards';
 export type { ActionResult } from './lib/action-result';
 
 // Estilos compartidos
@@ -30,5 +31,7 @@ export { SpendingHomeCard } from './components/SpendingHomeCard';
 export { HistoryViewSwitch } from './components/HistoryViewSwitch';
 export { ActiveFilters, type ActiveFilter } from './components/ActiveFilters';
 export { ScheduledKindSwitch } from './components/ScheduledKindSwitch';
+export { CardsScreen } from './components/CardsScreen';
+export { CardDebtStat } from './components/CardDebtStat';
 export { ExpectedIncomeNote } from './components/ExpectedIncomeNote';
 export { SCHEDULED_COPY, type ScheduledKind, type ScheduledCopy } from './lib/scheduled-copy';
