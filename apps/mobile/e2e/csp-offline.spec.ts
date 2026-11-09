@@ -99,6 +99,8 @@ const ROUTES = [
   'programados/',
   // El selector Gastos | Ingresos: la vista de ingresos programados.
   'programados/?tipo=ingresos',
+  // La vista de tarjetas de crédito.
+  'programados/?tipo=tarjetas',
   'cuentas/nueva/',
   'cuentas/editar/',
   'movimientos/editar/',
@@ -143,6 +145,50 @@ test('sin conexión, Programados vuelve a abrir con el selector y la vista de in
   await page.getByRole('link', { name: 'Gastos' }).click();
   await expect(page.getByText(/No tienes gastos programados/)).toBeVisible();
   await expectNoViolations(page, consoleErrors);
+});
+
+test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violaciones de CSP', async ({ page, context }) => {
+  const consoleErrors = await watchViolations(page);
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Ver con datos de ejemplo' }).click();
+  await expect(page.getByText('Deuda total en tarjetas')).toBeVisible();
+
+  await page.goto('programados/?tipo=tarjetas');
+  await expect(page.getByRole('link', { name: 'Tarjetas' })).toHaveAttribute('aria-current', 'true');
+  expect((await page.getByRole('link', { name: 'Tarjetas' }).boundingBox())!.height).toBeGreaterThanOrEqual(48);
+  await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+  await context.setOffline(true);
+  await page.reload();
+
+  await page.getByRole('button', { name: 'Agregar tarjeta' }).click();
+  await page.getByLabel('Nombre').fill('Mi Visa');
+  await page.getByLabel('Día en que pagas').fill('15');
+  await page.getByRole('radio', { name: 'Bancolombia' }).click();
+  await page.getByRole('radio', { name: 'Con intereses' }).click();
+  await page.getByLabel('Tasa', { exact: true }).fill('2');
+  await page.getByRole('button', { name: 'Guardar tarjeta' }).click();
+
+  const card = page.locator('li', { has: page.getByRole('heading', { name: 'Mi Visa' }) });
+  await card.getByRole('button', { name: 'Agregar compra en Mi Visa' }).click();
+  await page.getByLabel('Qué compraste').fill('Nevera');
+  await page.getByLabel('Monto').fill('1200000');
+  await page.getByRole('radio', { name: '12', exact: true }).click();
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await expect(page.getByText(/^Vas a pagar 12 cuotas\. La primera: \$124\.000 el .*Intereses en total: \$156\.000\. Total a pagar: \$1\.356\.000\.$/)).toBeVisible();
+  await page.getByRole('button', { name: 'Sí, guardar la compra' }).click();
+
+  await expect(card.getByText('Debes en total $1.200.000')).toBeVisible();
+  await card.getByRole('button', { name: 'Pagar cuota: Nevera' }).click();
+  await card.getByRole('button', { name: 'Confirmar pago' }).click();
+  await expect(card.getByText('Debes en total $1.100.000')).toBeVisible();
+  await expect(card.getByText('1/12 cuotas')).toBeVisible();
+
+  // Lo pagado sigue ahí al volver a abrir, todavía sin conexión.
+  await page.reload();
+  await expect(page.locator('li', { has: page.getByRole('heading', { name: 'Mi Visa' }) }).getByText('1/12 cuotas')).toBeVisible();
+  expect(await page.evaluate(() => window.__cspViolations)).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
 
 test('una dirección que no existe muestra la página 404, sin violaciones de CSP', async ({ page, baseURL }) => {

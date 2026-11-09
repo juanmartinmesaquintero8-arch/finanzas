@@ -1,11 +1,13 @@
 import type { FinanzasDb } from '@/data/database';
 import { IdbAccountRepository } from '@/data/idb-account.repository';
+import { IdbCardPurchaseRepository, IdbCreditCardRepository } from '@/data/idb-card.repository';
 import { IdbLedgerStore } from '@/data/idb-ledger-store';
 import { IdbScheduledExpenseRepository } from '@/data/idb-scheduled-expense.repository';
 import { IdbScheduledIncomeRepository } from '@/data/idb-scheduled-income.repository';
 import { IdbTransactionRepository } from '@/data/idb-transaction.repository';
 import { AccountService } from './account-service';
 import { BackupService } from './backup-service';
+import { CardService } from './card-service';
 import { ChangeBus } from './change-bus';
 import { DataService } from './data-service';
 import { ScheduledIncomeService } from './scheduled-income-service';
@@ -27,6 +29,7 @@ export interface AppServices {
   transactions: TransactionService;
   scheduled: ScheduledService;
   scheduledIncomes: ScheduledIncomeService;
+  cards: CardService;
   summary: SummaryService;
   spending: SpendingService;
   backup: BackupService;
@@ -44,6 +47,8 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     transactions: new IdbTransactionRepository(db),
     scheduled: new IdbScheduledExpenseRepository(db),
     scheduledIncomes: new IdbScheduledIncomeRepository(db),
+    cards: new IdbCreditCardRepository(db),
+    purchases: new IdbCardPurchaseRepository(db),
     ledger: new IdbLedgerStore(db),
     bus,
     now,
@@ -54,6 +59,7 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     transactions: new TransactionService(ctx),
     scheduled: new ScheduledService(ctx),
     scheduledIncomes: new ScheduledIncomeService(ctx),
+    cards: new CardService(ctx),
     summary: new SummaryService(ctx),
     spending: new SpendingService(ctx),
     backup: new BackupService(ctx),

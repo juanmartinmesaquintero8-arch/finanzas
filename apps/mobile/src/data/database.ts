@@ -75,6 +75,8 @@ export interface StoredCardPurchase {
   monthlyRatePpm: number;
   paidInstallments: number;
   closedOn: string | null;
+  /** Día de pago de la tarjeta al crear la compra. Las filas anteriores a este campo no lo traen. */
+  dueDayAnchor?: number | null;
 }
 
 export interface FinanzasSchema extends DBSchema {

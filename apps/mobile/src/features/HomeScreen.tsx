@@ -1,6 +1,6 @@
 'use client';
 
-import { AccountCards, AvailableBalanceCard, ExpectedIncomeNote, SpendingHomeCard, UpcomingCommitments, horizonEnd, isHorizon, ui } from '@finanzas/ui';
+import { AccountCards, AvailableBalanceCard, CardDebtStat, ExpectedIncomeNote, SpendingHomeCard, UpcomingCommitments, horizonEnd, isHorizon, ui } from '@finanzas/ui';
 import { useSearchParams } from 'next/navigation';
 import { InstallPrompt } from '@/pwa/install';
 import { useServices } from '@/state/services-provider';
@@ -14,15 +14,16 @@ export function HomeScreen() {
   const horizon = isHorizon(h) ? h : 'month';
   const { data, error } = useLive(
     async (s) => {
-      const [projection, hasSample, reminderDue, lastBackupAt, spending] = await Promise.all([
+      const [projection, hasSample, reminderDue, lastBackupAt, spending, cardDebt] = await Promise.all([
         s.summary.projection(horizonEnd(horizon, s.today())),
         s.data.hasSample(),
         s.backup.reminderDue(),
         s.backup.lastBackupAt(),
         // La tarjeta de gasto es un extra: si no se puede calcular, Inicio sigue funcionando sin ella.
         s.spending.month(undefined).catch(() => null),
+        s.cards.debtSummary(),
       ]);
-      return { projection, hasSample, reminderDue, lastBackupAt, spending };
+      return { projection, hasSample, reminderDue, lastBackupAt, spending, cardDebt };
     },
     [horizon],
   );
@@ -31,7 +32,7 @@ export function HomeScreen() {
   if (error && !data) return <p role="alert" className={ui.alert}>{error}</p>;
   if (!data) return <p className={ui.empty}>Cargando…</p>;
 
-  const { projection, hasSample, reminderDue, lastBackupAt, spending } = data;
+  const { projection, hasSample, reminderDue, lastBackupAt, spending, cardDebt } = data;
   if (projection.accounts.length === 0) {
     return <WelcomeCard onLoadSample={() => services.data.loadSample()} />;
   }
@@ -56,6 +57,7 @@ export function HomeScreen() {
         lastExpectedIncomeDate={projection.lastExpectedIncomeDate}
       />
       {spending && spending.total !== '0' && <SpendingHomeCard total={spending.total} href={routes.spending()} />}
+      {cardDebt.hasCards && <CardDebtStat debt={cardDebt.debt} />}
       <AccountCards accounts={projection.accounts} editHref={routes.editAccount} />
       <UpcomingCommitments commitments={projection.commitments} accountNames={names} />
       {reminderDue && <BackupReminder lastBackupAt={lastBackupAt} />}

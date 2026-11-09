@@ -55,7 +55,14 @@ export function EditTransactionScreen() {
   return (
     <>
       <h1 className={ui.pageTitle}>Editar movimiento</h1>
-      {data.transaction ? (
+      {data.transaction?.cardPayment ? (
+        <div className={`${ui.card} ${ui.stack}`} role="status">
+          <p>{data.transaction.cardPayment.message}</p>
+          <Link href={routes.history} className={ui.button}>
+            Volver
+          </Link>
+        </div>
+      ) : data.transaction ? (
         <AddTransactionForm
           accounts={data.accounts}
           today={services.today()}

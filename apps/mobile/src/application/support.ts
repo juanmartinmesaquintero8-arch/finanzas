@@ -5,6 +5,8 @@ import {
   UnknownAccountError,
   startOfDayUTC,
   type AccountRepository,
+  type CardPurchaseRepository,
+  type CreditCardRepository,
   type ScheduledExpenseRepository,
   type ScheduledIncomeRepository,
   type TransactionRepository,
@@ -22,6 +24,8 @@ export interface ServiceContext {
   transactions: TransactionRepository;
   scheduled: ScheduledExpenseRepository;
   scheduledIncomes: ScheduledIncomeRepository;
+  cards: CreditCardRepository;
+  purchases: CardPurchaseRepository;
   ledger: IdbLedgerStore;
   bus: ChangeBus;
   now: () => Date;

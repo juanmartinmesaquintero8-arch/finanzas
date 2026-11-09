@@ -17,6 +17,7 @@ export const routes = {
   add: '/agregar',
   scheduled: '/programados',
   scheduledIncomes: '/programados?tipo=ingresos',
+  scheduledCards: '/programados?tipo=tarjetas',
   settings: '/ajustes',
   newAccount: '/cuentas/nueva',
   editAccount: (id: string) => `/cuentas/editar?id=${id}`,

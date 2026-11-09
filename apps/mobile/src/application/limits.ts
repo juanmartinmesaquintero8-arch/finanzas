@@ -9,3 +9,9 @@ export const MAX_TEXT = { id: 100, name: 80, description: 160, category: 60 } as
 
 /** Largo máximo de texto al IMPORTAR una copia: con margen para copias ya guardadas con textos más largos. */
 export const MAX_IMPORT_TEXT = 2000;
+
+/** Topes que garantizan que una copia hecha por la app se pueda recuperar. */
+export const MAX_CREDIT_CARDS = 100;
+export const MAX_CARD_PURCHASES = 5000;
+/** Largo máximo del id de tarjeta o de compra: `cp-<compra>-liq` y `cf-<tarjeta>-AAAA-MM` deben caber en un id válido. */
+export const MAX_CARD_ID = 80;

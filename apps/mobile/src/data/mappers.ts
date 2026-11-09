@@ -1,16 +1,21 @@
 import {
   ACCOUNT_TYPES,
   Account,
+  CardPurchase,
+  CreditCard,
   FREQUENCIES,
+  InterestRate,
   Money,
   ScheduledExpense,
   ScheduledIncome,
   TransactionFactory,
   type AccountType,
+  type CardFee,
   type Frequency,
   type Transaction,
 } from '@finanzas/domain';
-import type { StoredAccount, StoredScheduledExpense, StoredScheduledIncome, StoredTransaction } from './database';
+import { parseDay } from '@/application/support';
+import type { StoredAccount, StoredCardPurchase, StoredCreditCard, StoredScheduledExpense, StoredScheduledIncome, StoredTransaction } from './database';
 
 /** Separador de la clave compuesta `cuenta|fecha`. */
 const KEY_SEP = '|';
@@ -122,6 +127,76 @@ export function toIncome(row: StoredScheduledIncome): ScheduledIncome {
     endDate: row.endDate ? new Date(row.endDate) : undefined,
     settledThrough: row.settledThrough ? new Date(row.settledThrough) : undefined,
     category: row.category ?? undefined,
+  });
+}
+
+export function toStoredCreditCard(c: CreditCard): StoredCreditCard {
+  const feeAmount = c.fee.kind === 'NONE' ? null : c.fee.amount;
+  return {
+    id: c.id,
+    name: c.name,
+    dueDay: c.dueDay,
+    paymentAccountId: c.paymentAccountId,
+    feeKind: c.fee.kind,
+    feeAmount: feeAmount?.amount.toString() ?? null,
+    currency: feeAmount?.currency ?? 'COP',
+    rateBasis: c.rate?.basis ?? null,
+    ratePpm: c.rate?.ppm ?? null,
+    feeStartMonth: c.feeStartMonth,
+    feesSettledThrough: c.feesSettledThrough ?? null,
+  };
+}
+
+function toCardFee(row: StoredCreditCard): CardFee {
+  if (row.feeKind === 'NONE') return { kind: 'NONE' };
+  return { kind: row.feeKind, amount: Money.of(BigInt(row.feeAmount!), row.currency) };
+}
+
+export function toCreditCard(row: StoredCreditCard): CreditCard {
+  return CreditCard.create({
+    id: row.id,
+    name: row.name,
+    dueDay: row.dueDay,
+    paymentAccountId: row.paymentAccountId,
+    fee: toCardFee(row),
+    rate: row.rateBasis && row.ratePpm !== null ? InterestRate.create({ basis: row.rateBasis, ppm: row.ratePpm }) : undefined,
+    feeStartMonth: row.feeStartMonth,
+    feesSettledThrough: row.feesSettledThrough ?? undefined,
+  });
+}
+
+export function toStoredCardPurchase(p: CardPurchase): StoredCardPurchase {
+  return {
+    id: p.id,
+    cardId: p.cardId,
+    description: p.description,
+    category: p.category ?? null,
+    amount: p.amount.amount.toString(),
+    currency: p.amount.currency,
+    installments: p.installments,
+    purchaseDate: p.purchaseDate.toISOString(),
+    firstDueDate: p.firstDueDate.toISOString(),
+    monthlyRatePpm: p.monthlyRatePpm,
+    paidInstallments: p.paidInstallments,
+    closedOn: p.closedOn?.toISOString() ?? null,
+    dueDayAnchor: p.dueDayAnchor ?? null,
+  };
+}
+
+export function toCardPurchase(row: StoredCardPurchase): CardPurchase {
+  return CardPurchase.create({
+    id: row.id,
+    cardId: row.cardId,
+    description: row.description,
+    category: row.category ?? undefined,
+    amount: Money.of(BigInt(row.amount), row.currency),
+    installments: row.installments,
+    purchaseDate: parseDay(row.purchaseDate),
+    firstDueDate: parseDay(row.firstDueDate),
+    monthlyRatePpm: row.monthlyRatePpm,
+    paidInstallments: row.paidInstallments,
+    closedOn: row.closedOn ? parseDay(row.closedOn) : undefined,
+    dueDayAnchor: row.dueDayAnchor ?? undefined,
   });
 }
 

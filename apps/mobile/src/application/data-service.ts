@@ -1,5 +1,5 @@
 import type { ActionResult } from '@finanzas/ui';
-import { generateSampleData, isSampleId } from './sample-data';
+import { generateSampleData, isSampleCardPaymentId, isSampleId } from './sample-data';
 import { AppError, writeAction, type ServiceContext } from './support';
 
 /** Estado general de los datos: ejemplos, borrado total. */
@@ -33,7 +33,7 @@ export class DataService {
       await this.ctx.ledger.replaceAll(
         {
           accounts: all.accounts.filter((a) => !isSampleId(a.id)),
-          transactions: all.transactions.filter((t) => !isSampleId(t.id) && !t.accountIds().some(isSampleId)),
+          transactions: all.transactions.filter((t) => !isSampleId(t.id) && !isSampleCardPaymentId(t.id) && !t.accountIds().some(isSampleId)),
           scheduledExpenses: all.scheduledExpenses.filter((s) => !isSampleId(s.id) && !isSampleId(s.accountId)),
           scheduledIncomes: all.scheduledIncomes.filter((i) => !isSampleId(i.id) && !isSampleId(i.accountId)),
         },

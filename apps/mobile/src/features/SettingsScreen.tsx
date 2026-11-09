@@ -18,13 +18,15 @@ type Pending =
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** «2 cuentas, 3 movimientos y 1 gasto programado»; los ingresos programados solo se nombran si la copia los trae. */
-function restoreContents(s: { accounts: number; transactions: number; scheduledExpenses: number; scheduledIncomes: number }): string {
+/** «2 cuentas, 3 movimientos y 1 gasto programado»; ingresos y tarjetas solo se nombran si la copia los trae. */
+function restoreContents(s: Omit<BackupSummary, 'exportedAt'>): string {
   const parts = [
     plural(s.accounts, 'cuenta', 'cuentas'),
     plural(s.transactions, 'movimiento', 'movimientos'),
     plural(s.scheduledExpenses, 'gasto programado', 'gastos programados'),
     ...(s.scheduledIncomes > 0 ? [plural(s.scheduledIncomes, 'ingreso programado', 'ingresos programados')] : []),
+    ...(s.creditCards > 0 ? [plural(s.creditCards, 'tarjeta', 'tarjetas')] : []),
+    ...(s.cardPurchases > 0 ? [plural(s.cardPurchases, 'compra con tarjeta', 'compras con tarjeta')] : []),
   ];
   return `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`;
 }
@@ -183,7 +185,7 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
 
       <section className={`${ui.card} ${ui.stack}`} aria-labelledby="erase-title">
         <h2 id="erase-title">Empezar de cero</h2>
-        <p>Borra todas tus cuentas, movimientos y gastos programados de este celular.</p>
+        <p>Borra todas tus cuentas, movimientos, gastos programados, ingresos programados, tarjetas y compras de este celular.</p>
         <button type="button" className={ui.buttonDanger} onClick={() => setPending({ step: 'erase-1' })}>
           Borrar todos mis datos
         </button>
@@ -205,7 +207,7 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
       {pending?.step === 'erase-2' && (
         <section role="alertdialog" aria-labelledby="erase-q2" className={`${ui.card} ${ui.stack}`}>
           <h2 id="erase-q2">Última pregunta</h2>
-          <p>Esto no se puede deshacer. Se borrarán todas tus cuentas, movimientos y gastos programados.</p>
+          <p>Esto no se puede deshacer. Se borrarán todas tus cuentas, movimientos, gastos programados, ingresos programados, tarjetas y compras.</p>
           <button type="button" className={ui.buttonDanger} disabled={busy} onClick={confirmErase}>
             Sí, borrar todo
           </button>

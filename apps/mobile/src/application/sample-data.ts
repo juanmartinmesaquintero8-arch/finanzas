@@ -1,4 +1,4 @@
-import { Account, Money, ScheduledExpense, ScheduledIncome, TransactionFactory } from '@finanzas/domain';
+import { Account, CardPurchase, CreditCard, InterestRate, Money, ScheduledExpense, ScheduledIncome, TransactionFactory, defaultFirstDueDate } from '@finanzas/domain';
 import { addDays, addMonthsISO, todayISO } from '@finanzas/ui';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
 import { CURRENCY, parseDay } from './support';
@@ -42,7 +42,35 @@ export function generateSampleData(now: Date): LedgerSnapshot {
     ScheduledIncome.create({ id: `${SAMPLE_PREFIX}sueldo`, description: 'Sueldo', amount: cop(2_500_000), accountId: `${SAMPLE_PREFIX}bancolombia`, frequency: 'MONTHLY', startDate: parseDay(addDays(today, 12)), category: 'Salario' }),
   ];
 
-  return { accounts, transactions, scheduledExpenses, scheduledIncomes };
+  const rate = InterestRate.create({ basis: 'MV', ppm: 18_700 });
+  const card = CreditCard.create({
+    id: `${SAMPLE_PREFIX}visa`,
+    name: 'Visa de ejemplo',
+    dueDay: 15,
+    paymentAccountId: `${SAMPLE_PREFIX}bancolombia`,
+    fee: { kind: 'FIXED_MONTHLY', amount: cop(18_000) },
+    rate,
+    feeStartMonth: today.slice(0, 7),
+  });
+  const purchaseDate = parseDay(today);
+  const purchase = CardPurchase.create({
+    id: `${SAMPLE_PREFIX}televisor`,
+    cardId: card.id,
+    description: 'Televisor',
+    category: 'Hogar',
+    amount: cop(1_200_000),
+    installments: 12,
+    purchaseDate,
+    firstDueDate: defaultFirstDueDate(purchaseDate, card.dueDay),
+    monthlyRatePpm: rate.monthlyPpm,
+    paidInstallments: 0,
+    dueDayAnchor: card.dueDay,
+  });
+
+  return { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards: [card], cardPurchases: [purchase] };
 }
 
 export const isSampleId = (id: string): boolean => id.startsWith(SAMPLE_PREFIX);
+
+/** Pago hecho a una compra o tarjeta de ejemplo: `cp-demo-…`, `ci-demo-…`, `cf-demo-…`. */
+export const isSampleCardPaymentId = (id: string): boolean => /^(cp|ci|cf)-/.test(id) && isSampleId(id.slice(3));

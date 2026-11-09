@@ -1,0 +1,248 @@
+/* Tarjetas de crédito: dentro de cada tarjeta las filas se separan con una línea, nunca con otra tarjeta. */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.debt {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.next {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.row:last-child {
+  padding-bottom: 0;
+}
+
+.rowTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.desc {
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.count {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.figure {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fees {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feesTitle {
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding-bottom: 10px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+
+/* Los chips de estas pantallas se tocan con dinero de por medio: 48 px, como los botones. */
+.tall [role='radio'] {
+  min-height: 48px;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.total {
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary {
+  font-weight: 700;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.help {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.previewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.previewRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.previewRow:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.switch input {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 52px;
+  height: 32px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--muted);
+  cursor: pointer;
+  transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.switch input:checked {
+  background: var(--primary);
+}
+
+.switch input:checked::after {
+  transform: translateX(20px);
+}
+
+.formTop {
+  scroll-margin-top: 12px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.statLabel {
+  font-weight: 700;
+}
+
+.statValue {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -1,30 +1,36 @@
 import {
   ACCOUNT_TYPES,
   Account,
+  CardPurchase,
+  CreditCard,
   DomainValidationError,
   FREQUENCIES,
+  InterestRate,
   InvalidMoneyError,
+  MAX_MV_PPM,
   Money,
   ScheduledExpense,
   ScheduledIncome,
   TRANSACTION_TYPES,
   TransactionFactory,
   type AccountType,
+  type CardFee,
   type Frequency,
   type Transaction,
   type TransactionType,
 } from '@finanzas/domain';
-import type { LedgerSnapshot } from '@/data/idb-ledger-store';
-import { MAX_IMPORT_TEXT, isInt64 } from './limits';
+import type { LedgerSnapshot, LedgerWrite } from '@/data/idb-ledger-store';
+import { MAX_CARD_ID, MAX_CARD_PURCHASES, MAX_CREDIT_CARDS, MAX_IMPORT_TEXT, isInt64 } from './limits';
+import { isoDay, parseDay } from './support';
 import { toAccountView, toScheduledView, toTransactionView } from './views';
 
 /** Versión del formato del archivo. Subirla cuando cambie la forma de los datos. */
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 
 /** Tamaño máximo del archivo de copia (bytes). */
 export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 /** Cantidad máxima de elementos por lista. */
-export const MAX_ITEMS = { accounts: 500, transactions: 200_000, scheduledExpenses: 2_000, scheduledIncomes: 2_000 } as const;
+export const MAX_ITEMS = { accounts: 500, transactions: 200_000, scheduledExpenses: 2_000, scheduledIncomes: 2_000, creditCards: MAX_CREDIT_CARDS, cardPurchases: MAX_CARD_PURCHASES } as const;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 export const UNUSABLE_PREFIX = 'La copia no se puede usar: ';
 const LABEL_MAX = 40;
@@ -38,6 +44,8 @@ export interface BackupFile {
   transactions: ReturnType<typeof toTransactionView>[];
   scheduledExpenses: ReturnType<typeof toScheduledView>[];
   scheduledIncomes: ReturnType<typeof toScheduledView>[];
+  creditCards: ReturnType<typeof toCardRow>[];
+  cardPurchases: ReturnType<typeof toPurchaseRow>[];
 }
 
 export interface BackupSummary {
@@ -45,6 +53,8 @@ export interface BackupSummary {
   transactions: number;
   scheduledExpenses: number;
   scheduledIncomes: number;
+  creditCards: number;
+  cardPurchases: number;
   exportedAt: string;
 }
 
@@ -56,7 +66,37 @@ export function backupFileName(now: Date): string {
   return `mis-finanzas-${now.toISOString().slice(0, 10)}.json`;
 }
 
-export function serializeBackup(snapshot: LedgerSnapshot, exportedAt: Date): string {
+function toCardRow(c: CreditCard) {
+  return {
+    id: c.id,
+    name: c.name,
+    dueDay: c.dueDay,
+    paymentAccountId: c.paymentAccountId,
+    fee: c.fee.kind === 'NONE' ? { kind: c.fee.kind } : { kind: c.fee.kind, amount: c.fee.amount.toJSON() },
+    rate: c.rate ? { basis: c.rate.basis, ppm: c.rate.ppm } : null,
+    feeStartMonth: c.feeStartMonth,
+    feesSettledThrough: c.feesSettledThrough ?? null,
+  };
+}
+
+function toPurchaseRow(p: CardPurchase) {
+  return {
+    id: p.id,
+    cardId: p.cardId,
+    description: p.description,
+    category: p.category ?? null,
+    amount: p.amount.toJSON(),
+    installments: p.installments,
+    purchaseDate: isoDay(p.purchaseDate),
+    firstDueDate: isoDay(p.firstDueDate),
+    monthlyRatePpm: p.monthlyRatePpm,
+    paidInstallments: p.paidInstallments,
+    closedOn: p.closedOn ? isoDay(p.closedOn) : null,
+    dueDayAnchor: p.dueDayAnchor ?? null,
+  };
+}
+
+export function serializeBackup(snapshot: LedgerWrite, exportedAt: Date): string {
   const file: BackupFile = {
     version: BACKUP_VERSION,
     exportedAt: exportedAt.toISOString(),
@@ -64,6 +104,8 @@ export function serializeBackup(snapshot: LedgerSnapshot, exportedAt: Date): str
     transactions: snapshot.transactions.map(toTransactionView),
     scheduledExpenses: snapshot.scheduledExpenses.map(toScheduledView),
     scheduledIncomes: snapshot.scheduledIncomes.map(toScheduledView),
+    creditCards: (snapshot.creditCards ?? []).map(toCardRow),
+    cardPurchases: (snapshot.cardPurchases ?? []).map(toPurchaseRow),
   };
   return JSON.stringify(file);
 }
@@ -87,7 +129,7 @@ const str = (v: unknown): string => {
   if (typeof v !== 'string') throw new Invalid(DAMAGED);
   return v;
 };
-type Kind = 'account' | 'transaction' | 'scheduled' | 'income';
+type Kind = 'account' | 'transaction' | 'scheduled' | 'income' | 'card' | 'purchase';
 /** Cómo nombrar el dato en los mensajes: «la cuenta «X»» o, si no hay texto que lo identifique, «una cuenta». */
 function labelOf(kind: Kind, identifier: unknown): string {
   const nouns = {
@@ -95,6 +137,8 @@ function labelOf(kind: Kind, identifier: unknown): string {
     transaction: ['el movimiento', 'un movimiento'],
     scheduled: ['el gasto programado', 'un gasto programado'],
     income: ['el ingreso programado', 'un ingreso programado'],
+    card: ['la tarjeta', 'una tarjeta'],
+    purchase: ['la compra', 'una compra'],
   } as const;
   const [named, generic] = nouns[kind];
   if (typeof identifier !== 'string' || identifier.trim().length === 0) return generic;
@@ -191,6 +235,110 @@ function parseSchedule(raw: unknown, kind: 'scheduled' | 'income') {
 const parseScheduled = (raw: unknown): ScheduledExpense => ScheduledExpense.create(parseSchedule(raw, 'scheduled'));
 const parseIncome = (raw: unknown): ScheduledIncome => ScheduledIncome.create(parseSchedule(raw, 'income'));
 
+const unusable = (who: string, problem: string) => new Invalid(`${UNUSABLE_PREFIX}${who} ${problem}`);
+const invalidData = (who: string) => unusable(who, 'tiene datos que no son válidos.');
+const invalidRate = (who: string) => unusable(who, 'tiene una tasa de interés que no es válida.');
+
+/** Los errores del dominio de una tarjeta o compra se dicen nombrando el dato. */
+function checked<T>(who: string, build: () => T): T {
+  try {
+    return build();
+  } catch (e) {
+    if (e instanceof Invalid) throw e;
+    throw invalidData(who);
+  }
+}
+
+function cardScopedId(v: unknown, who: string): string {
+  const value = id(v);
+  // `cp-<compra>-liq` y `cf-<tarjeta>-AAAA-MM` deben caber en un id válido de movimiento.
+  if (value.length > MAX_CARD_ID) throw unusable(who, 'tiene un identificador demasiado largo.');
+  return value;
+}
+
+function cardDate(v: unknown, who: string): Date {
+  try {
+    const d = parseDay(str(v));
+    if (d.getUTCFullYear() < 2000 || d.getUTCFullYear() > 2100) throw new Invalid('');
+    return d;
+  } catch {
+    throw unusable(who, 'tiene una fecha que no es válida.');
+  }
+}
+
+function parseCardFee(raw: unknown, who: string): CardFee {
+  if (!isObj(raw)) throw invalidData(who);
+  const kind = checked(who, () => oneOf(['NONE', 'FIXED_MONTHLY', 'ON_MOVEMENT'] as const, raw.kind));
+  return kind === 'NONE' ? { kind } : { kind, amount: money(raw.amount, who) };
+}
+
+function parseCardRate(raw: unknown, who: string): InterestRate | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (!isObj(raw)) throw invalidRate(who);
+  try {
+    return InterestRate.create({ basis: raw.basis as 'MV' | 'EA', ppm: raw.ppm as number });
+  } catch {
+    throw invalidRate(who);
+  }
+}
+
+function parseCard(raw: unknown): CreditCard {
+  if (!isObj(raw)) throw new Invalid(DAMAGED);
+  const who = labelOf('card', raw.name);
+  const cardId = cardScopedId(raw.id, who);
+  // Monto y tasa antes que el texto: así el mensaje puede nombrar el dato aunque su texto esté dañado.
+  const fee = parseCardFee(raw.fee, who);
+  const rate = parseCardRate(raw.rate, who);
+  const name = text(raw.name, who);
+  return checked(who, () =>
+    CreditCard.create({
+      id: cardId,
+      name,
+      dueDay: raw.dueDay as number,
+      paymentAccountId: id(raw.paymentAccountId),
+      fee,
+      rate,
+      feeStartMonth: str(raw.feeStartMonth),
+      feesSettledThrough: optStr(raw.feesSettledThrough),
+    }),
+  );
+}
+
+function parsePurchase(raw: unknown): CardPurchase {
+  if (!isObj(raw)) throw new Invalid(DAMAGED);
+  const who = labelOf('purchase', raw.description);
+  const purchaseId = cardScopedId(raw.id, who);
+  const amount = money(raw.amount, who);
+  const ppm = raw.monthlyRatePpm;
+  if (typeof ppm !== 'number' || !Number.isSafeInteger(ppm) || ppm < 0 || ppm > MAX_MV_PPM) throw invalidRate(who);
+  const description = text(raw.description, who);
+  const category = optText(raw.category, who);
+  const installments = raw.installments as number;
+  const paidInstallments = raw.paidInstallments as number;
+  if (Number.isInteger(installments) && Number.isInteger(paidInstallments) && paidInstallments > installments) {
+    throw unusable(who, 'tiene más cuotas pagadas que cuotas.');
+  }
+  const purchaseDate = cardDate(raw.purchaseDate, who);
+  const firstDueDate = cardDate(raw.firstDueDate, who);
+  const closedOn = raw.closedOn === null || raw.closedOn === undefined ? undefined : cardDate(raw.closedOn, who);
+  return checked(who, () =>
+    CardPurchase.create({
+      id: purchaseId,
+      cardId: id(raw.cardId),
+      description,
+      category,
+      amount,
+      installments,
+      purchaseDate,
+      firstDueDate,
+      monthlyRatePpm: ppm,
+      paidInstallments,
+      closedOn,
+      dueDayAnchor: raw.dueDayAnchor === null || raw.dueDayAnchor === undefined ? undefined : (raw.dueDayAnchor as number),
+    }),
+  );
+}
+
 function assertUniqueIds(items: readonly { id: string }[]): void {
   if (new Set(items.map((i) => i.id)).size !== items.length) {
     throw new Invalid('La copia tiene datos repetidos, así que no se puede usar.');
@@ -219,11 +367,17 @@ export function parseBackup(text: string): ParsedBackup {
     // Las copias v1 no traen ingresos programados (valen vacío); desde la v2 la lista es obligatoria.
     if (json.version >= 2 && json.scheduledIncomes === undefined) throw new Invalid(DAMAGED);
     const incomesRaw = json.version >= 2 ? arrayOf(json.scheduledIncomes) : [];
+    // Las copias v1 y v2 no traen tarjetas (valen vacío); desde la v3 las dos listas son obligatorias.
+    if (json.version >= 3 && (json.creditCards === undefined || json.cardPurchases === undefined)) throw new Invalid(DAMAGED);
+    const cardsRaw = json.version >= 3 ? arrayOf(json.creditCards) : [];
+    const purchasesRaw = json.version >= 3 ? arrayOf(json.cardPurchases) : [];
     if (
       accountsRaw.length > MAX_ITEMS.accounts ||
       transactionsRaw.length > MAX_ITEMS.transactions ||
       scheduledRaw.length > MAX_ITEMS.scheduledExpenses ||
-      incomesRaw.length > MAX_ITEMS.scheduledIncomes
+      incomesRaw.length > MAX_ITEMS.scheduledIncomes ||
+      cardsRaw.length > MAX_ITEMS.creditCards ||
+      purchasesRaw.length > MAX_ITEMS.cardPurchases
     ) {
       throw new Invalid(TOO_MANY);
     }
@@ -233,11 +387,15 @@ export function parseBackup(text: string): ParsedBackup {
     let transactions: Transaction[];
     let scheduledExpenses: ScheduledExpense[];
     let scheduledIncomes: ScheduledIncome[];
+    let creditCards: CreditCard[];
+    let cardPurchases: CardPurchase[];
     try {
       accounts = accountsRaw.map(parseAccount);
       transactions = transactionsRaw.map(parseTransaction);
       scheduledExpenses = scheduledRaw.map(parseScheduled);
       scheduledIncomes = incomesRaw.map(parseIncome);
+      creditCards = cardsRaw.map(parseCard);
+      cardPurchases = purchasesRaw.map(parsePurchase);
     } catch (e) {
       if (e instanceof Invalid) throw e;
       if (e instanceof DomainValidationError || e instanceof InvalidMoneyError || e instanceof RangeError || e instanceof SyntaxError) {
@@ -250,20 +408,31 @@ export function parseBackup(text: string): ParsedBackup {
     assertUniqueIds(transactions);
     assertUniqueIds(scheduledExpenses);
     assertUniqueIds(scheduledIncomes);
+    assertUniqueIds(creditCards);
+    assertUniqueIds(cardPurchases);
     const known = new Set(accounts.map((a) => a.id));
     const missingAccount = () => new Invalid('La copia tiene movimientos, gastos o ingresos de una cuenta que no existe en ella.');
     for (const t of transactions) if (t.accountIds().some((id) => !known.has(id))) throw missingAccount();
     for (const s of scheduledExpenses) if (!known.has(s.accountId)) throw missingAccount();
     for (const i of scheduledIncomes) if (!known.has(i.accountId)) throw missingAccount();
+    const knownCards = new Set(creditCards.map((c) => c.id));
+    for (const c of creditCards) {
+      if (!known.has(c.paymentAccountId)) throw unusable(labelOf('card', c.name), 'se paga desde una cuenta que no existe en la copia.');
+    }
+    for (const p of cardPurchases) {
+      if (!knownCards.has(p.cardId)) throw unusable(labelOf('purchase', p.description), 'es de una tarjeta que no existe en la copia.');
+    }
 
     return {
       ok: true,
-      snapshot: { accounts, transactions, scheduledExpenses, scheduledIncomes },
+      snapshot: { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards, cardPurchases },
       summary: {
         accounts: accounts.length,
         transactions: transactions.length,
         scheduledExpenses: scheduledExpenses.length,
         scheduledIncomes: scheduledIncomes.length,
+        creditCards: creditCards.length,
+        cardPurchases: cardPurchases.length,
         exportedAt: json.exportedAt,
       },
     };
