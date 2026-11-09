@@ -18,6 +18,17 @@ type Pending =
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** «2 cuentas, 3 movimientos y 1 gasto programado»; los ingresos programados solo se nombran si la copia los trae. */
+function restoreContents(s: { accounts: number; transactions: number; scheduledExpenses: number; scheduledIncomes: number }): string {
+  const parts = [
+    plural(s.accounts, 'cuenta', 'cuentas'),
+    plural(s.transactions, 'movimiento', 'movimientos'),
+    plural(s.scheduledExpenses, 'gasto programado', 'gastos programados'),
+    ...(s.scheduledIncomes > 0 ? [plural(s.scheduledIncomes, 'ingreso programado', 'ingresos programados')] : []),
+  ];
+  return `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`;
+}
+
 const readText = (file: File): Promise<string> =>
   typeof file.text === 'function'
     ? file.text()
@@ -145,8 +156,7 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
         <section role="alertdialog" aria-labelledby="restore-q" aria-describedby="restore-d" className={`${ui.card} ${ui.stack}`}>
           <h2 id="restore-q">¿Recuperar esta copia?</h2>
           <p id="restore-d">
-            Trae {plural(pending.summary.accounts, 'cuenta', 'cuentas')}, {plural(pending.summary.transactions, 'movimiento', 'movimientos')} y{' '}
-            {plural(pending.summary.scheduledExpenses, 'gasto programado', 'gastos programados')}
+            Trae {restoreContents(pending.summary)}
             {pending.summary.exportedAt ? ` (hecha el ${formatShortDate(todayISO(new Date(pending.summary.exportedAt)))})` : ''}. Al recuperarla se
             reemplaza todo lo que tienes ahora en este celular.
           </p>

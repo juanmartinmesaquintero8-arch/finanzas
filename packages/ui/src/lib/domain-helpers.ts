@@ -63,6 +63,17 @@ function occurrence(frequency: Frequency, start: string, k: number): string {
   }
 }
 
+/** ¿Hay alguna fecha que ya llegó (hasta hoy) y aún no se ha liquidado? (sólo para mostrar) */
+export function hasDueOccurrence(s: Schedule, today: string): boolean {
+  for (let k = 0; k < 2000; k++) {
+    const date = occurrence(s.frequency, s.startDate, k);
+    if (date > today || (s.endDate && date > s.endDate)) return false;
+    if (!s.settledThrough || date > s.settledThrough) return true;
+    if (s.frequency === 'ONCE') return false;
+  }
+  return false;
+}
+
 /** Próximo pago pendiente (sólo para mostrar; el cálculo financiero vive en la API). */
 export function nextOccurrence(s: Schedule, today: string): string | null {
   if (s.frequency === 'ONCE') {

@@ -1,0 +1,21 @@
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.line {
+  color: var(--income);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}

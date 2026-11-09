@@ -57,6 +57,7 @@ export class ScheduledService {
           amount: expense.amount,
           date,
           description: expense.description,
+          category: expense.category,
         }),
       );
       await this.ctx.ledger.settle(expense.markSettled(upTo), real);
@@ -65,6 +66,7 @@ export class ScheduledService {
 
   private build(id: string, input: CreateScheduledExpenseInput, settledThrough?: Date): ScheduledExpense {
     assertTextLength('description', input.description);
+    assertTextLength('category', input.category);
     return ScheduledExpense.create({
       id,
       description: input.description,
@@ -74,6 +76,7 @@ export class ScheduledService {
       startDate: parseDay(input.startDate),
       endDate: input.endDate ? parseDay(input.endDate) : undefined,
       settledThrough,
+      category: input.category,
     });
   }
 

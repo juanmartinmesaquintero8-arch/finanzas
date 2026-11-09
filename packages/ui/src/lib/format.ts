@@ -97,6 +97,12 @@ export function formatShortDate(day: string): string {
   return `${d} ${MONTHS[m - 1]!.slice(0, 3)} ${y}`;
 }
 
+/** "lunes 30 de marzo": el día de la semana, el número y el mes (sin "hoy" ni "ayer"). */
+export function formatWeekdayDate(day: string): string {
+  const { m, d, dow } = parts(day);
+  return `${WEEKDAYS[dow]} ${d} de ${MONTHS[m - 1]}`;
+}
+
 export function frequencyLabel(frequency: Frequency, startDate: string): string {
   const { d, dow } = parts(startDate);
   switch (frequency) {

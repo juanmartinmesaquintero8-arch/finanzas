@@ -39,6 +39,8 @@ export interface StoredScheduledExpense {
   startDate: string;
   endDate: string | null;
   settledThrough: string | null;
+  /** Ausente en las filas guardadas antes de existir la categoría. */
+  category?: string | null;
 }
 
 /** Ingreso programado: mismos campos que el gasto programado. */

@@ -35,9 +35,9 @@ export class DataService {
           accounts: all.accounts.filter((a) => !isSampleId(a.id)),
           transactions: all.transactions.filter((t) => !isSampleId(t.id) && !t.accountIds().some(isSampleId)),
           scheduledExpenses: all.scheduledExpenses.filter((s) => !isSampleId(s.id) && !isSampleId(s.accountId)),
+          scheduledIncomes: all.scheduledIncomes.filter((i) => !isSampleId(i.id) && !isSampleId(i.accountId)),
         },
         {
-          scheduledIncomes: extras.scheduledIncomes.filter((i) => keep(i, i.accountId)),
           creditCards: keptCards,
           cardPurchases: extras.cardPurchases.filter((p) => !isSampleId(p.id) && keptCardIds.has(p.cardId)),
         },

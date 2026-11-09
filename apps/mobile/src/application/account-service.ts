@@ -44,6 +44,9 @@ export class AccountService {
       if ((await this.ctx.scheduled.findAll()).some((s) => s.accountId === id)) {
         throw new AppError('Esta cuenta tiene gastos programados. Elimínalos primero para poder borrarla.');
       }
+      if ((await this.ctx.scheduledIncomes.findAll()).some((s) => s.accountId === id)) {
+        throw new AppError('Esta cuenta tiene ingresos programados. Elimínalos primero para poder borrarla.');
+      }
       await this.ctx.accounts.delete(id);
     });
   }

@@ -8,6 +8,7 @@ export * from './transaction/transaction.factory';
 export * from './ledger/balance-calculator';
 export * from './scheduled/recurrence';
 export * from './scheduled/scheduled-expense';
+export * from './scheduled/scheduled-income';
 export * from './projection/projection-engine';
 export * from './ports/repositories';
 export * from './spending';

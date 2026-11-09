@@ -6,6 +6,7 @@ import {
   startOfDayUTC,
   type AccountRepository,
   type ScheduledExpenseRepository,
+  type ScheduledIncomeRepository,
   type TransactionRepository,
 } from '@finanzas/domain';
 import type { ActionResult } from '@finanzas/ui';
@@ -20,6 +21,7 @@ export interface ServiceContext {
   accounts: AccountRepository & { delete(id: string): Promise<void> };
   transactions: TransactionRepository;
   scheduled: ScheduledExpenseRepository;
+  scheduledIncomes: ScheduledIncomeRepository;
   ledger: IdbLedgerStore;
   bus: ChangeBus;
   now: () => Date;
@@ -79,12 +81,13 @@ export function toMessage(e: unknown): string {
 }
 
 /** Ejecuta una escritura y avisa del cambio sólo si salió bien. */
-export async function writeAction(ctx: Pick<ServiceContext, 'bus'>, action: () => Promise<void>): Promise<ActionResult> {
+export async function writeAction(ctx: Pick<ServiceContext, 'bus'>, action: () => Promise<string | void>): Promise<ActionResult> {
+  let notice: string | void;
   try {
-    await action();
+    notice = await action();
   } catch (e) {
     return { ok: false, error: toMessage(e) };
   }
   ctx.bus.emit();
-  return { ok: true };
+  return notice ? { ok: true, notice } : { ok: true };
 }

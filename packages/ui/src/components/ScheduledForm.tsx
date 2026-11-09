@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import type { ActionResult } from '../lib/action-result';
 import { formatGroupedDigits } from '../lib/format';
+import { SCHEDULED_COPY, type ScheduledKind } from '../lib/scheduled-copy';
 import type { Account, CreateScheduledExpenseInput, Frequency, ScheduledExpense } from '../lib/types';
 import { validateScheduledForm, type FieldErrors } from '../lib/validation';
 import { ChipGroup } from './ChipGroup';
@@ -21,12 +22,17 @@ interface Props {
   today: string;
   onSubmit: (input: CreateScheduledExpenseInput) => Promise<ActionResult>;
   onDone?: () => void;
-  /** Si se pasa, el formulario edita este gasto (precargado) en vez de crear uno nuevo. */
+  /** Si se pasa, el formulario edita este gasto o ingreso (precargado) en vez de crear uno nuevo. */
   expense?: ScheduledExpense;
   onCancel?: () => void;
+  /** Gasto (por defecto) o ingreso programado: cambia los textos, no los campos. */
+  kind?: ScheduledKind;
+  /** Muestra el campo opcional de categoría (la app móvil lo usa; la web, no). */
+  withCategory?: boolean;
 }
 
-export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCancel }: Props) {
+export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCancel, kind = 'expense', withCategory = false }: Props) {
+  const copy = SCHEDULED_COPY[kind];
   const editing = !!expense;
   const [description, setDescription] = useState(expense?.description ?? '');
   const [amountText, setAmountText] = useState(expense ? formatGroupedDigits(expense.amount.amount) : '');
@@ -34,6 +40,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
   const [frequency, setFrequency] = useState<Frequency>(expense?.frequency ?? 'MONTHLY');
   const [startDate, setStartDate] = useState(expense?.startDate ?? today);
   const [endDate, setEndDate] = useState(expense?.endDate ?? '');
+  const [category, setCategory] = useState(expense?.category ?? '');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -41,14 +48,18 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setServerError(null);
-    const result = validateScheduledForm({
-      description,
-      amountText,
-      accountId,
-      frequency,
-      startDate,
-      endDate: frequency === 'ONCE' ? '' : endDate,
-    });
+    const result = validateScheduledForm(
+      {
+        description,
+        amountText,
+        accountId,
+        frequency,
+        startDate,
+        endDate: frequency === 'ONCE' ? '' : endDate,
+        category: withCategory ? category : '',
+      },
+      kind,
+    );
     if (!result.ok) {
       setErrors(result.errors);
       return;
@@ -65,7 +76,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
         onDone?.();
       } else setServerError(res.error);
     } catch {
-      setServerError('No pudimos guardar el gasto programado. Intenta de nuevo.');
+      setServerError(copy.saveError);
     } finally {
       setPending(false);
     }
@@ -82,7 +93,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
           className={ui.input}
           maxLength={160}
           autoComplete="off"
-          placeholder="Ej: Arriendo"
+          placeholder={copy.placeholder}
           value={description}
           aria-invalid={errors.description ? 'true' : undefined}
           onChange={(e) => setDescription(e.target.value)}
@@ -106,7 +117,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
         {errors.amount && <p className={ui.error}>{errors.amount}</p>}
       </div>
       <ChipGroup
-        label="Se paga desde"
+        label={copy.accountLabel}
         options={accounts.map((a) => ({ value: a.id, label: a.name }))}
         value={accountId}
         onChange={setAccountId}
@@ -115,7 +126,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
       <ChipGroup label="Frecuencia" options={FREQUENCIES} value={frequency} onChange={setFrequency} />
       <div className={ui.field}>
         <label className={ui.label} htmlFor="sc-start">
-          Fecha del primer pago
+          {copy.startLabel}
         </label>
         <input
           id="sc-start"
@@ -130,7 +141,7 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
       {frequency !== 'ONCE' && (
         <div className={ui.field}>
           <label className={ui.label} htmlFor="sc-end">
-            Fecha del último pago (opcional)
+            {copy.endLabel}
           </label>
           <input
             id="sc-end"
@@ -141,6 +152,21 @@ export function ScheduledForm({ accounts, today, onSubmit, onDone, expense, onCa
             onChange={(e) => setEndDate(e.target.value)}
           />
           {errors.endDate && <p className={ui.error}>{errors.endDate}</p>}
+        </div>
+      )}
+      {withCategory && (
+        <div className={ui.field}>
+          <label className={ui.label} htmlFor="sc-category">
+            Categoría (opcional)
+          </label>
+          <input
+            id="sc-category"
+            className={ui.input}
+            maxLength={60}
+            autoComplete="off"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          />
         </div>
       )}
       {serverError && (

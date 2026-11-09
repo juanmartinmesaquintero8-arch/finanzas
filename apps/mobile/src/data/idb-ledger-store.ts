@@ -1,17 +1,18 @@
-import type { Account, ScheduledExpense, Transaction } from '@finanzas/domain';
+import type { Account, ScheduledExpense, ScheduledIncome, Transaction } from '@finanzas/domain';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import type {
   FinanzasDb,
   FinanzasSchema,
   StoredCardPurchase,
   StoredCreditCard,
-  StoredScheduledIncome,
   StoredTransaction,
 } from './database';
 import {
   toAccount,
+  toIncome,
   toScheduled,
   toStoredAccount,
+  toStoredIncome,
   toStoredScheduled,
   toStoredTransaction,
   toTransaction,
@@ -21,11 +22,11 @@ export interface LedgerSnapshot {
   accounts: Account[];
   transactions: Transaction[];
   scheduledExpenses: ScheduledExpense[];
+  scheduledIncomes: ScheduledIncome[];
 }
 
-/** Filas de los almacenes agregados en la v2, tal como se guardan (aún sin entidades de dominio). */
+/** Filas de los almacenes de tarjetas (v2), tal como se guardan (aún sin entidades de dominio). */
 export interface ExtraRows {
-  scheduledIncomes: StoredScheduledIncome[];
   creditCards: StoredCreditCard[];
   cardPurchases: StoredCardPurchase[];
 }
@@ -83,18 +84,28 @@ export class IdbLedgerStore {
     });
   }
 
+  /** Guarda los ingresos reales y marca el ingreso programado como recibido, todo o nada. */
+  receive(received: ScheduledIncome, realTransactions: readonly Transaction[]): Promise<void> {
+    return atomically(this.db, ['transactions', 'scheduledIncomes'], (tx, track) => {
+      for (const t of realTransactions) track(tx.objectStore('transactions').put(toStoredTransaction(t)));
+      track(tx.objectStore('scheduledIncomes').put(toStoredIncome(received)));
+    });
+  }
+
   async readAll(): Promise<LedgerSnapshot> {
-    const tx = this.db.transaction(['accounts', 'transactions', 'scheduledExpenses'], 'readonly');
-    const [accounts, transactions, scheduledExpenses] = await Promise.all([
+    const tx = this.db.transaction(['accounts', 'transactions', 'scheduledExpenses', 'scheduledIncomes'], 'readonly');
+    const [accounts, transactions, scheduledExpenses, scheduledIncomes] = await Promise.all([
       tx.objectStore('accounts').getAll(),
       tx.objectStore('transactions').getAll(),
       tx.objectStore('scheduledExpenses').getAll(),
+      tx.objectStore('scheduledIncomes').getAll(),
       tx.done,
     ]);
     return {
       accounts: accounts.map(toAccount),
       transactions: transactions.map(toTransaction),
       scheduledExpenses: scheduledExpenses.map(toScheduled),
+      scheduledIncomes: scheduledIncomes.map(toIncome),
     };
   }
 
@@ -130,43 +141,45 @@ export class IdbLedgerStore {
     }
   }
 
-  /** Lee las filas de los almacenes de la v2 (para conservarlas al reescribir el resto). */
+  /** Lee las filas de los almacenes de tarjetas (para conservarlas al reescribir el resto). */
   async readExtras(): Promise<ExtraRows> {
-    const tx = this.db.transaction(['scheduledIncomes', 'creditCards', 'cardPurchases'], 'readonly');
-    const [scheduledIncomes, creditCards, cardPurchases] = await Promise.all([
-      tx.objectStore('scheduledIncomes').getAll(),
+    const tx = this.db.transaction(['creditCards', 'cardPurchases'], 'readonly');
+    const [creditCards, cardPurchases] = await Promise.all([
       tx.objectStore('creditCards').getAll(),
       tx.objectStore('cardPurchases').getAll(),
       tx.done,
     ]);
-    return { scheduledIncomes, creditCards, cardPurchases };
+    return { creditCards, cardPurchases };
   }
 
   /**
    * Reemplaza todos los datos por los recibidos (restaurar copia), en una sola transacción.
-   * Los almacenes de la v2 quedan con `extras`; si no se pasan (copia que no los trae) quedan vacíos.
+   * Los almacenes de tarjetas quedan con `extras`; si no se pasan (copia que no los trae) quedan vacíos.
    */
   replaceAll(snapshot: LedgerSnapshot, extras: Partial<ExtraRows> = {}): Promise<void> {
     return atomically(this.db, [...DATA_STORES], (tx, track) => {
       const accounts = tx.objectStore('accounts');
       const transactions = tx.objectStore('transactions');
       const scheduled = tx.objectStore('scheduledExpenses');
+      const incomes = tx.objectStore('scheduledIncomes');
       track(accounts.clear());
       track(transactions.clear());
       track(scheduled.clear());
-      for (const store of ['scheduledIncomes', 'creditCards', 'cardPurchases'] as const) {
+      track(incomes.clear());
+      for (const store of ['creditCards', 'cardPurchases'] as const) {
         track(tx.objectStore(store).clear());
         for (const row of extras[store] ?? []) track(tx.objectStore(store).put(row as never));
       }
       for (const a of snapshot.accounts) track(accounts.put(toStoredAccount(a)));
       for (const t of snapshot.transactions) track(transactions.put(toStoredTransaction(t)));
       for (const s of snapshot.scheduledExpenses) track(scheduled.put(toStoredScheduled(s)));
+      for (const i of snapshot.scheduledIncomes) track(incomes.put(toStoredIncome(i)));
     });
   }
 
   /** Borra todos los datos (cuentas, movimientos, programados, tarjetas y compras). Conserva los ajustes (meta). */
   clearAll(): Promise<void> {
-    return this.replaceAll({ accounts: [], transactions: [], scheduledExpenses: [] });
+    return this.replaceAll({ accounts: [], transactions: [], scheduledExpenses: [], scheduledIncomes: [] });
   }
 
   async getMeta<T = unknown>(key: string): Promise<T | undefined> {

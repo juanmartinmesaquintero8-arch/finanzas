@@ -1,4 +1,4 @@
-import type { Account, ScheduledExpense, Transaction } from '@finanzas/domain';
+import type { Account, ScheduledExpense, ScheduledIncome, Transaction } from '@finanzas/domain';
 import type { Account as AccountView, ScheduledExpense as ScheduledExpenseView, Transaction as TransactionView } from '@finanzas/ui';
 import { isoDay } from './support';
 
@@ -22,7 +22,7 @@ export function toTransactionView(t: Transaction): TransactionView {
   };
 }
 
-export function toScheduledView(s: ScheduledExpense): ScheduledExpenseView {
+export function toScheduledView(s: ScheduledExpense | ScheduledIncome): ScheduledExpenseView {
   return {
     id: s.id,
     description: s.description,
@@ -32,5 +32,8 @@ export function toScheduledView(s: ScheduledExpense): ScheduledExpenseView {
     startDate: isoDay(s.startDate),
     endDate: s.endDate ? isoDay(s.endDate) : null,
     settledThrough: s.settledThrough ? isoDay(s.settledThrough) : null,
+    category: s.category ?? null,
   };
 }
+
+export const toScheduledIncomeView = toScheduledView;
