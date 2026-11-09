@@ -155,6 +155,7 @@ test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violac
 
   await page.goto('programados/?tipo=tarjetas');
   await expect(page.getByRole('link', { name: 'Tarjetas' })).toHaveAttribute('aria-current', 'true');
+  expect((await page.getByRole('link', { name: 'Tarjetas' }).boundingBox())!.height).toBeGreaterThanOrEqual(48);
   await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   await context.setOffline(true);
