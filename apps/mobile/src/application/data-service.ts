@@ -26,15 +26,26 @@ export class DataService {
   removeSample(): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const all = await this.ctx.ledger.readAll();
-      await this.ctx.ledger.replaceAll({
-        accounts: all.accounts.filter((a) => !isSampleId(a.id)),
-        transactions: all.transactions.filter((t) => !isSampleId(t.id) && !t.accountIds().some(isSampleId)),
-        scheduledExpenses: all.scheduledExpenses.filter((s) => !isSampleId(s.id) && !isSampleId(s.accountId)),
-      });
+      const extras = await this.ctx.ledger.readExtras();
+      const keep = (row: { id: string }, ...refs: string[]) => ![row.id, ...refs].some(isSampleId);
+      const keptCards = extras.creditCards.filter((c) => keep(c, c.paymentAccountId));
+      const keptCardIds = new Set(keptCards.map((c) => c.id));
+      await this.ctx.ledger.replaceAll(
+        {
+          accounts: all.accounts.filter((a) => !isSampleId(a.id)),
+          transactions: all.transactions.filter((t) => !isSampleId(t.id) && !t.accountIds().some(isSampleId)),
+          scheduledExpenses: all.scheduledExpenses.filter((s) => !isSampleId(s.id) && !isSampleId(s.accountId)),
+        },
+        {
+          scheduledIncomes: extras.scheduledIncomes.filter((i) => keep(i, i.accountId)),
+          creditCards: keptCards,
+          cardPurchases: extras.cardPurchases.filter((p) => !isSampleId(p.id) && keptCardIds.has(p.cardId)),
+        },
+      );
     });
   }
 
-  /** Borra cuentas, movimientos y gastos programados. */
+  /** Borra todo: cuentas, movimientos, gastos e ingresos programados, tarjetas y compras. */
   eraseAll(): Promise<ActionResult> {
     return writeAction(this.ctx, () => this.ctx.ledger.clearAll());
   }

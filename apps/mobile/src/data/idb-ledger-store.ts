@@ -1,6 +1,13 @@
 import type { Account, ScheduledExpense, Transaction } from '@finanzas/domain';
 import type { IDBPTransaction, StoreNames } from 'idb';
-import type { FinanzasDb, FinanzasSchema, StoredTransaction } from './database';
+import type {
+  FinanzasDb,
+  FinanzasSchema,
+  StoredCardPurchase,
+  StoredCreditCard,
+  StoredScheduledIncome,
+  StoredTransaction,
+} from './database';
 import {
   toAccount,
   toScheduled,
@@ -16,10 +23,17 @@ export interface LedgerSnapshot {
   scheduledExpenses: ScheduledExpense[];
 }
 
+/** Filas de los almacenes agregados en la v2, tal como se guardan (aún sin entidades de dominio). */
+export interface ExtraRows {
+  scheduledIncomes: StoredScheduledIncome[];
+  creditCards: StoredCreditCard[];
+  cardPurchases: StoredCardPurchase[];
+}
+
 /** Filas por lectura al recorrer el historial para las gráficas. */
 const SCAN_BATCH = 5000;
 
-const DATA_STORES = ['accounts', 'transactions', 'scheduledExpenses'] as const;
+const DATA_STORES = ['accounts', 'transactions', 'scheduledExpenses', 'scheduledIncomes', 'creditCards', 'cardPurchases'] as const;
 
 type WriteTx = IDBPTransaction<FinanzasSchema, StoreNames<FinanzasSchema>[], 'readwrite'>;
 type Track = (request: Promise<unknown>) => void;
@@ -70,7 +84,7 @@ export class IdbLedgerStore {
   }
 
   async readAll(): Promise<LedgerSnapshot> {
-    const tx = this.db.transaction([...DATA_STORES], 'readonly');
+    const tx = this.db.transaction(['accounts', 'transactions', 'scheduledExpenses'], 'readonly');
     const [accounts, transactions, scheduledExpenses] = await Promise.all([
       tx.objectStore('accounts').getAll(),
       tx.objectStore('transactions').getAll(),
@@ -116,8 +130,23 @@ export class IdbLedgerStore {
     }
   }
 
-  /** Reemplaza todos los datos por los recibidos (restaurar copia), en una sola transacción. */
-  replaceAll(snapshot: LedgerSnapshot): Promise<void> {
+  /** Lee las filas de los almacenes de la v2 (para conservarlas al reescribir el resto). */
+  async readExtras(): Promise<ExtraRows> {
+    const tx = this.db.transaction(['scheduledIncomes', 'creditCards', 'cardPurchases'], 'readonly');
+    const [scheduledIncomes, creditCards, cardPurchases] = await Promise.all([
+      tx.objectStore('scheduledIncomes').getAll(),
+      tx.objectStore('creditCards').getAll(),
+      tx.objectStore('cardPurchases').getAll(),
+      tx.done,
+    ]);
+    return { scheduledIncomes, creditCards, cardPurchases };
+  }
+
+  /**
+   * Reemplaza todos los datos por los recibidos (restaurar copia), en una sola transacción.
+   * Los almacenes de la v2 quedan con `extras`; si no se pasan (copia que no los trae) quedan vacíos.
+   */
+  replaceAll(snapshot: LedgerSnapshot, extras: Partial<ExtraRows> = {}): Promise<void> {
     return atomically(this.db, [...DATA_STORES], (tx, track) => {
       const accounts = tx.objectStore('accounts');
       const transactions = tx.objectStore('transactions');
@@ -125,13 +154,17 @@ export class IdbLedgerStore {
       track(accounts.clear());
       track(transactions.clear());
       track(scheduled.clear());
+      for (const store of ['scheduledIncomes', 'creditCards', 'cardPurchases'] as const) {
+        track(tx.objectStore(store).clear());
+        for (const row of extras[store] ?? []) track(tx.objectStore(store).put(row as never));
+      }
       for (const a of snapshot.accounts) track(accounts.put(toStoredAccount(a)));
       for (const t of snapshot.transactions) track(transactions.put(toStoredTransaction(t)));
       for (const s of snapshot.scheduledExpenses) track(scheduled.put(toStoredScheduled(s)));
     });
   }
 
-  /** Borra cuentas, movimientos y gastos programados. Conserva los ajustes (meta). */
+  /** Borra todos los datos (cuentas, movimientos, programados, tarjetas y compras). Conserva los ajustes (meta). */
   clearAll(): Promise<void> {
     return this.replaceAll({ accounts: [], transactions: [], scheduledExpenses: [] });
   }
