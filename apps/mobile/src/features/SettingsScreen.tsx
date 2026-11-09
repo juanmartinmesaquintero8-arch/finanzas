@@ -185,7 +185,7 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
 
       <section className={`${ui.card} ${ui.stack}`} aria-labelledby="erase-title">
         <h2 id="erase-title">Empezar de cero</h2>
-        <p>Borra todas tus cuentas, movimientos y gastos programados de este celular.</p>
+        <p>Borra todas tus cuentas, movimientos, gastos programados, ingresos programados, tarjetas y compras de este celular.</p>
         <button type="button" className={ui.buttonDanger} onClick={() => setPending({ step: 'erase-1' })}>
           Borrar todos mis datos
         </button>
@@ -207,7 +207,7 @@ export function SettingsScreen({ deliver = deliverBackup }: { deliver?: typeof d
       {pending?.step === 'erase-2' && (
         <section role="alertdialog" aria-labelledby="erase-q2" className={`${ui.card} ${ui.stack}`}>
           <h2 id="erase-q2">Última pregunta</h2>
-          <p>Esto no se puede deshacer. Se borrarán todas tus cuentas, movimientos y gastos programados.</p>
+          <p>Esto no se puede deshacer. Se borrarán todas tus cuentas, movimientos, gastos programados, ingresos programados, tarjetas y compras.</p>
           <button type="button" className={ui.buttonDanger} disabled={busy} onClick={confirmErase}>
             Sí, borrar todo
           </button>
