@@ -9,8 +9,16 @@ import {
 } from '@finanzas/domain';
 import type { ActionResult, CreateTransactionInput, Transaction as TransactionView, TransactionPage } from '@finanzas/ui';
 import { decodeCursor, encodeCursor } from './cursor';
-import { assertTextLength, notFound, parseMoney, writeAction, type ServiceContext } from './support';
+import { AppError, assertTextLength, notFound, parseMoney, writeAction, type ServiceContext } from './support';
 import { toTransactionView } from './views';
+
+/** Los pagos de tarjeta llevan ids fijos: se deshacen desde la tarjeta para que la deuda y el saldo sigan cuadrando. */
+const CARD_PAYMENT_ID = /^(cp|ci|cf)-/;
+const CARD_PAYMENT_LOCKED = 'Este pago viene de una tarjeta. Para deshacerlo, usa «Deshacer último pago» en la tarjeta.';
+
+function assertNotCardPayment(id: string): void {
+  if (CARD_PAYMENT_ID.test(id)) throw new AppError(CARD_PAYMENT_LOCKED);
+}
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -64,6 +72,7 @@ export class TransactionService {
   /** Reemplaza el movimiento reconstruyéndolo con la Factory, así se aplican todas las reglas aunque cambie el tipo. */
   update(id: string, input: CreateTransactionInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
+      assertNotCardPayment(id);
       if (!(await this.ctx.transactions.findById(id))) throw notFound('ese movimiento');
       await this.save(id, input);
     });
@@ -71,6 +80,7 @@ export class TransactionService {
 
   remove(id: string): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
+      assertNotCardPayment(id);
       if (!(await this.ctx.transactions.findById(id))) throw notFound('ese movimiento');
       await this.ctx.transactions.delete(id);
     });

@@ -1,4 +1,6 @@
 import { Account } from '../account/account';
+import { CardPurchase } from '../card/card-purchase';
+import { CreditCard } from '../card/credit-card';
 import { ScheduledExpense } from '../scheduled/scheduled-expense';
 import { ScheduledIncome } from '../scheduled/scheduled-income';
 import { Transaction } from '../transaction/transaction';
@@ -57,6 +59,21 @@ export interface ScheduledIncomeRepository {
   findAll(): Promise<ScheduledIncome[]>;
   findById(id: string): Promise<ScheduledIncome | null>;
   save(income: ScheduledIncome): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface CreditCardRepository {
+  findAll(): Promise<CreditCard[]>;
+  findById(id: string): Promise<CreditCard | null>;
+  save(card: CreditCard): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+export interface CardPurchaseRepository {
+  findAll(): Promise<CardPurchase[]>;
+  findById(id: string): Promise<CardPurchase | null>;
+  findByCard(cardId: string): Promise<CardPurchase[]>;
+  save(purchase: CardPurchase): Promise<void>;
   delete(id: string): Promise<void>;
 }
 

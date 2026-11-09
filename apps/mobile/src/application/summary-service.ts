@@ -1,9 +1,12 @@
 import {
   BalanceCalculator,
   ProjectionEngine,
+  cardCommitments,
   startOfDayUTC,
   type Account,
   type BalanceSnapshot,
+  type CardPurchase,
+  type CreditCard,
   type ScheduledExpense,
   type ScheduledIncome,
 } from '@finanzas/domain';
@@ -15,6 +18,8 @@ interface Base {
   snapshot: BalanceSnapshot;
   scheduled: ScheduledExpense[];
   incomes: ScheduledIncome[];
+  cards: CreditCard[];
+  purchases: CardPurchase[];
 }
 
 /**
@@ -54,20 +59,23 @@ export class SummaryService {
 
   private loadBase(): Promise<Base> {
     this.base ??= (async () => {
-      const [accounts, deltas, scheduled, incomes] = await Promise.all([
+      const [accounts, deltas, scheduled, incomes, cards, purchases] = await Promise.all([
         this.ctx.accounts.findAll(),
         this.ctx.transactions.balanceDeltas(),
         this.ctx.scheduled.findAll(),
         this.ctx.scheduledIncomes.findAll(),
+        this.ctx.cards.findAll(),
+        this.ctx.purchases.findAll(),
       ]);
-      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled, incomes };
+      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled, incomes, cards, purchases };
     })();
     return this.base;
   }
 
   private async compute(from: Date, to: Date): Promise<ProjectionWithIncome> {
-    const { accounts, snapshot, scheduled, incomes } = await this.loadBase();
-    const projection = this.engine.project({ snapshot, scheduledExpenses: scheduled, scheduledIncomes: incomes, from: startOfDayUTC(from), to });
+    const { accounts, snapshot, scheduled, incomes, cards, purchases } = await this.loadBase();
+    const extraCommitments = cardCommitments(cards, purchases, from, to);
+    const projection = this.engine.project({ snapshot, scheduledExpenses: scheduled, scheduledIncomes: incomes, extraCommitments, from: startOfDayUTC(from), to });
     const names = new Map(accounts.map((a) => [a.id, a.name]));
     return {
       from: isoDay(projection.from),

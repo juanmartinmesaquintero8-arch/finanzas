@@ -140,3 +140,123 @@ export interface SpendingView {
   totalDelta: string | null;
   rows: SpendingRowView[];
 }
+
+export type CardFeeKind = 'NONE' | 'FIXED_MONTHLY' | 'ON_MOVEMENT';
+export type RateBasis = 'MV' | 'EA';
+
+/** Una cuota: montos como texto de entero (bigint). */
+export interface InstallmentView {
+  number: number;
+  /** 'YYYY-MM-DD' */
+  dueDate: string;
+  capital: string;
+  interest: string;
+  total: string;
+}
+
+export interface PurchaseView {
+  id: string;
+  cardId: string;
+  description: string;
+  category: string | null;
+  amount: string;
+  installments: number;
+  paidInstallments: number;
+  purchaseDate: string;
+  firstDueDate: string;
+  monthlyRatePpm: number;
+  closedOn: string | null;
+  /** La cuota por pagar; null si está liquidada o pagada por completo. */
+  next: InstallmentView | null;
+  /** Lo que costaría liquidarla hoy; null si ya no se debe nada. */
+  settle: { capital: string; interest: string; total: string } | null;
+}
+
+export interface PendingFeeView {
+  /** 'YYYY-MM' */
+  month: string;
+  dueDate: string;
+  amount: string;
+}
+
+export interface CardView {
+  id: string;
+  name: string;
+  dueDay: number;
+  paymentAccountId: string;
+  feeKind: CardFeeKind;
+  feeAmount: string | null;
+  rateBasis: RateBasis | null;
+  /** La tasa como se escribe: '1,87'. */
+  rateText: string | null;
+  /** Tasa mensual en ppm con la que se calculan las compras nuevas (0 sin intereses). */
+  monthlyRatePpm: number;
+  chargesInterest: boolean;
+  /** Capital pendiente de todas sus compras. */
+  debt: string;
+  next: { amount: string; date: string } | null;
+  purchases: PurchaseView[];
+  pendingFees: PendingFeeView[];
+}
+
+export interface CardInput {
+  name: string;
+  dueDay: number;
+  paymentAccountId: string;
+  feeKind: CardFeeKind;
+  feeAmount?: string;
+  /** Ambos o ninguno: sin ellos la tarjeta no cobra intereses. */
+  rateBasis?: RateBasis;
+  rateText?: string;
+}
+
+export interface PurchaseInput {
+  cardId: string;
+  description: string;
+  amount: string;
+  installments: number;
+  purchaseDate: string;
+  firstDueDate: string;
+  category?: string;
+  paidInstallments?: number;
+  withoutInterest?: boolean;
+}
+
+export interface PayInstallmentInput {
+  fromAccountId: string;
+  paidOn: string;
+  /** Interés de esta cuota si el extracto dice otro valor (≥ 0, sin decimales). */
+  interest?: string;
+  /** Número de la cuota que se ve en pantalla: evita que un segundo toque pague la siguiente. */
+  installment?: number;
+}
+
+export interface SettleInput {
+  fromAccountId: string;
+  paidOn: string;
+}
+
+export interface PayFeeInput {
+  fromAccountId: string;
+  paidOn: string;
+  amount?: string;
+}
+
+/** Lo que se confirma antes de guardar una compra. */
+export interface PurchasePreview {
+  totalCount: number;
+  /** Cuotas que faltan por pagar (todas, si no hay cuotas ya pagadas). */
+  remainingCount: number;
+  /** Solo las cuotas que faltan. */
+  installments: InstallmentView[];
+  totalInterest: string;
+  totalToPay: string;
+}
+
+export type PurchasePreviewResult = { ok: true; preview: PurchasePreview } | { ok: false; error: string };
+
+/** Revisión de la tasa escrita: error que bloquea, o advertencia que no bloquea. */
+export interface RateCheck {
+  error?: string;
+  warning?: boolean;
+}
