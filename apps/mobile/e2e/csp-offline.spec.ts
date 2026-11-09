@@ -131,7 +131,7 @@ test('sin conexión, "En qué gasto" vuelve a abrir y muestra el estado vacío',
 test('sin conexión, Programados vuelve a abrir con el selector y la vista de ingresos', async ({ page, context }) => {
   const consoleErrors = await watchViolations(page);
   await page.goto('programados/');
-  await expect(page.getByRole('group', { name: 'Tipo' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Tipo de programado' })).toBeVisible();
   await page.evaluate(async () => (await navigator.serviceWorker.ready).scope);
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 

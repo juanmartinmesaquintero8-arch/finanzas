@@ -201,3 +201,27 @@ describe('ProjectionEngine con ingresos programados', () => {
     expect(p.expectedIncome).toEqual(cop(100));
   });
 });
+
+describe('ProjectionEngine: fecha del último ingreso esperado', () => {
+  const engine = new ProjectionEngine('COP');
+  const from = d('2026-10-24');
+  const to = d('2026-11-30');
+  const inc = (id: string, on: string, over = {}) =>
+    ScheduledIncome.create({ id, description: id, amount: cop(10), accountId: 'a', frequency: 'ONCE', startDate: d(on), ...over });
+  const snap = new BalanceSnapshot([], cop(100));
+
+  it('es la fecha del último ingreso que cae en la ventana', () => {
+    const p = engine.project({ snapshot: snap, scheduledExpenses: [], scheduledIncomes: [inc('a', '2026-11-05'), inc('b', '2026-11-20'), inc('c', '2027-01-01')], from, to });
+    expect(p.lastExpectedIncomeDate?.toISOString().slice(0, 10)).toBe('2026-11-20');
+  });
+
+  it('con ingresos recurrentes es la última ocurrencia dentro de la ventana', () => {
+    const p = engine.project({ snapshot: snap, scheduledExpenses: [], scheduledIncomes: [inc('m', '2026-10-30', { frequency: 'MONTHLY' })], from, to });
+    expect(p.lastExpectedIncomeDate?.toISOString().slice(0, 10)).toBe('2026-11-30');
+  });
+
+  it('sin ingresos esperados no hay fecha', () => {
+    const p = engine.project({ snapshot: snap, scheduledExpenses: [], from, to });
+    expect(p.lastExpectedIncomeDate).toBeUndefined();
+  });
+});

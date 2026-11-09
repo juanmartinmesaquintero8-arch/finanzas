@@ -67,6 +67,8 @@ export interface Projection {
   expectedIncome?: MoneyView;
   availableWithIncome?: MoneyView;
   lowestWithIncome?: { date: string; balance: MoneyView };
+  /** Fecha ('YYYY-MM-DD') del último ingreso esperado en la ventana; ausente si no hay. */
+  lastExpectedIncomeDate?: string;
 }
 
 /** Proyección con los datos de ingresos esperados ya presentes. */

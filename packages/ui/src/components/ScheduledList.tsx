@@ -12,7 +12,8 @@ interface Props {
   items: ScheduledExpense[];
   accounts: Account[];
   today: string;
-  onSettle: (id: string, through: string) => Promise<void>;
+  /** Puede devolver un aviso para mostrar tras salir bien. */
+  onSettle: (id: string, through: string) => Promise<string | void>;
   onDelete: (id: string) => Promise<void>;
   onEdit?: (item: ScheduledExpense) => void;
   /** Gasto (por defecto) o ingreso programado. */
@@ -25,17 +26,19 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEd
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const names = new Map(accounts.map((a) => [a.id, a.name]));
 
   if (items.length === 0) {
     return <p className={ui.empty}>{copy.empty}</p>;
   }
 
-  async function run(id: string, action: () => Promise<void>, failure: string) {
+  async function run(id: string, action: () => Promise<string | void>, failure: string) {
     setBusy(id);
     setError(null);
+    setNotice(null);
     try {
-      await action();
+      setNotice((await action()) || null);
       setConfirming(null);
     } catch {
       setError(failure);
@@ -49,6 +52,11 @@ export function ScheduledList({ items, accounts, today, onSettle, onDelete, onEd
       {error && (
         <p role="alert" className={ui.alert}>
           {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className={ui.notice}>
+          {notice}
         </p>
       )}
       <ul className={styles.list}>

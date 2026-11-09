@@ -26,7 +26,7 @@ describe('Programados: selector Gastos | Ingresos', () => {
   it('por defecto muestra los gastos y ofrece el selector', async () => {
     await renderWithServices(<ScheduledPage />, services);
     expect(await screen.findByRole('heading', { level: 1, name: 'Programados' })).toBeInTheDocument();
-    const group = screen.getByRole('group', { name: 'Tipo' });
+    const group = screen.getByRole('group', { name: 'Tipo de programado' });
     expect(within(group).getByRole('link', { name: 'Gastos' })).toHaveAttribute('aria-current', 'true');
     expect(within(group).getByRole('link', { name: 'Ingresos' })).toHaveAttribute('href', '/programados?tipo=ingresos');
     expect(screen.getByRole('button', { name: '+ Nuevo gasto programado' })).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('Programados: selector Gastos | Ingresos', () => {
   it('con tipo=ingresos muestra los ingresos y su estado vacío', async () => {
     search = 'tipo=ingresos';
     await renderWithServices(<ScheduledPage />, services);
-    const group = await screen.findByRole('group', { name: 'Tipo' });
+    const group = await screen.findByRole('group', { name: 'Tipo de programado' });
     expect(within(group).getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByText('No tienes ingresos programados. Agrega tu sueldo o lo que recibes seguido.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Nuevo ingreso programado' })).toBeInTheDocument();
@@ -101,5 +101,14 @@ describe('Inicio: lo que se espera recibir', () => {
     await services.scheduledIncomes.create({ description: 'Sueldo', amount: '2000000', accountId, frequency: 'ONCE', startDate: '2026-03-30' });
     await renderWithServices(<HomeScreen />, services);
     expect(await screen.findByText('Ojo: el jueves 12 de marzo te faltarían $ 300.000 antes de que llegue lo que esperas.')).toBeInTheDocument();
+  });
+});
+
+describe('Inicio: aviso cuando el hueco llega después del ingreso', () => {
+  it('dice "según lo programado" si el punto más bajo es después de que llegó el ingreso', async () => {
+    await services.scheduledIncomes.create({ description: 'Sueldo', amount: '100', accountId, frequency: 'ONCE', startDate: '2026-03-12' });
+    await services.scheduled.create({ description: 'Viaje', amount: '1500000', accountId, frequency: 'ONCE', startDate: '2026-03-20' });
+    await renderWithServices(<HomeScreen />, services);
+    expect(await screen.findByText('Ojo: el viernes 20 de marzo te faltarían $ 499.900 según lo programado.')).toBeInTheDocument();
   });
 });

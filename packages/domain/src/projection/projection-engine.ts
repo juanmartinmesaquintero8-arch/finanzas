@@ -41,6 +41,8 @@ export interface Projection {
   availableWithIncome: Money;
   /** Punto más bajo del saldo día a día, con compromisos e ingresos (el ingreso del día va primero; en empate, el primero). */
   lowestWithIncome: TimelinePoint;
+  /** Fecha del último ingreso esperado dentro de la ventana; sin valor si no hay ninguno. */
+  lastExpectedIncomeDate?: Date;
 }
 
 export interface ProjectionInput {
@@ -75,6 +77,7 @@ export class ProjectionEngine {
       expectedIncome,
       availableWithIncome: availableBalance.add(expectedIncome),
       lowestWithIncome: this.lowestPoint(snapshot.netWorth, commitments, incomes, startOfDayUTC(from)),
+      lastExpectedIncomeDate: incomes.reduce<Date | undefined>((last, i) => (!last || i.date.getTime() > last.getTime() ? i.date : last), undefined),
     };
   }
 

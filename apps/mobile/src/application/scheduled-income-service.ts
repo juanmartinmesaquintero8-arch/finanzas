@@ -1,4 +1,4 @@
-import { ScheduledIncome, TransactionFactory, UnknownAccountError, assertDomain } from '@finanzas/domain';
+import { ScheduledIncome, TransactionFactory, UnknownAccountError } from '@finanzas/domain';
 import type { ActionResult, CreateScheduledIncomeInput, ScheduledIncome as ScheduledIncomeView } from '@finanzas/ui';
 import { AppError, assertTextLength, isoDay, notFound, parseDay, parseMoney, writeAction, type ServiceContext } from './support';
 import { toScheduledIncomeView } from './views';
@@ -37,33 +37,33 @@ export class ScheduledIncomeService {
   }
 
   /**
-   * "Ya lo recibí": registra un ingreso real por cada ocurrencia que ya llegó hasta `through` y marca el
-   * programado como recibido, todo en una sola escritura (o nada). Cada movimiento tiene un id fijo
-   * (ingreso + fecha): si la misma acción se repite a la vez, reescribe lo mismo y no duplica.
+   * "Ya lo recibí": registra SOLO la última ocurrencia que ya llegó (hasta `through`) y marca el programado
+   * como recibido hasta esa fecha; las anteriores se dan por recibidas sin crear dinero. Es una sola escritura
+   * (o nada). El movimiento tiene un id fijo (ingreso + fecha): si la acción se repite a la vez, reescribe lo
+   * mismo y no duplica.
    */
   receive(id: string, through: string): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const upTo = parseDay(through);
       const income = await this.ctx.scheduledIncomes.findById(id);
       if (!income) throw notFound('ese ingreso programado');
-      assertDomain(
-        !income.settledThrough || upTo.getTime() > income.settledThrough.getTime(),
-        'Ese ingreso ya está registrado hasta esa fecha o una posterior',
-      );
       const due = income.pendingOccurrences(income.startDate, upTo);
-      if (due.length === 0) throw new AppError('Todavía no llega la fecha de este ingreso.');
-      const real = due.map((date) =>
-        TransactionFactory.create({
-          id: `${income.id}-${isoDay(date)}`,
-          type: 'INCOME',
-          accountId: income.accountId,
-          amount: income.amount,
-          date,
-          description: income.description,
-          category: income.category,
-        }),
-      );
-      await this.ctx.ledger.receive(income.markSettled(upTo), real);
+      if (due.length === 0) {
+        if (income.settledThrough) throw new AppError('Ese ingreso ya está registrado hasta esa fecha o una posterior');
+        throw new AppError('Todavía no llega la fecha de este ingreso.');
+      }
+      const latest = due[due.length - 1]!;
+      const real = TransactionFactory.create({
+        id: `${income.id}-${isoDay(latest)}`,
+        type: 'INCOME',
+        accountId: income.accountId,
+        amount: income.amount,
+        date: latest,
+        description: income.description,
+        category: income.category,
+      });
+      await this.ctx.ledger.receive(income.markSettled(latest), [real]);
+      return due.length > 1 ? 'Registramos solo el último; los anteriores se dan por recibidos.' : undefined;
     });
   }
 

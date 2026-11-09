@@ -79,7 +79,7 @@ describe('copia v2: ingresos programados', () => {
       expect(parsed.summary).toMatchObject({ scheduledIncomes: 1 });
       expect(await other.backup.restore(parsed.snapshot)).toEqual({ ok: true });
       expect(await other.scheduledIncomes.list()).toEqual(await s.scheduledIncomes.list());
-      expect((await other.scheduledIncomes.list())[0]).toMatchObject({ category: 'Salario', settledThrough: '2026-03-10', endDate: '2026-12-28' });
+      expect((await other.scheduledIncomes.list())[0]).toMatchObject({ category: 'Salario', settledThrough: '2026-02-28', endDate: '2026-12-28' });
       expect(await other.scheduled.list()).toEqual(await s.scheduled.list());
       expect((await other.scheduled.list())[0]!.category).toBe('Vivienda');
     } finally {

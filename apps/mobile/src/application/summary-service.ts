@@ -94,6 +94,7 @@ export class SummaryService {
       expectedIncome: projection.expectedIncome.toJSON(),
       availableWithIncome: projection.availableWithIncome.toJSON(),
       lowestWithIncome: { date: isoDay(projection.lowestWithIncome.date), balance: projection.lowestWithIncome.balance.toJSON() },
+      ...(projection.lastExpectedIncomeDate && { lastExpectedIncomeDate: isoDay(projection.lastExpectedIncomeDate) }),
     };
   }
 }

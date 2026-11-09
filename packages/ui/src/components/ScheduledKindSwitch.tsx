@@ -11,7 +11,7 @@ interface Props {
 /** Selector de arriba de Programados: "Gastos" o "Ingresos". */
 export function ScheduledKindSwitch({ active, expensesHref, incomesHref }: Props) {
   return (
-    <div className={`${ui.chips} ${styles.switch}`} role="group" aria-label="Tipo">
+    <div className={`${ui.chips} ${styles.switch}`} role="group" aria-label="Tipo de programado">
       <Link href={expensesHref} className={ui.chip} aria-current={active === 'expenses' ? 'true' : undefined} replace>
         Gastos
       </Link>

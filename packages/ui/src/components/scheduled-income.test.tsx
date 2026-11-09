@@ -227,7 +227,7 @@ describe('ScheduledScreen en modo ingreso', () => {
 describe('ScheduledKindSwitch', () => {
   it('ofrece Gastos e Ingresos con enlaces y marca el activo', () => {
     render(<ScheduledKindSwitch active="incomes" expensesHref="/programados" incomesHref="/programados?tipo=ingresos" />);
-    const group = screen.getByRole('group', { name: 'Tipo' });
+    const group = screen.getByRole('group', { name: 'Tipo de programado' });
     expect(within(group).getByRole('link', { name: 'Gastos' })).toHaveAttribute('href', '/programados');
     expect(within(group).getByRole('link', { name: 'Ingresos' })).toHaveAttribute('href', '/programados?tipo=ingresos');
     expect(within(group).getByRole('link', { name: 'Ingresos' })).toHaveAttribute('aria-current', 'true');
@@ -236,7 +236,7 @@ describe('ScheduledKindSwitch', () => {
 });
 
 describe('ExpectedIncomeNote', () => {
-  const lowest = (amount: string) => ({ date: '2026-03-30', balance: cop(amount) });
+  const lowest = (amount: string, date = '2026-03-30') => ({ date, balance: cop(amount) });
 
   it('no aparece sin ingresos esperados', () => {
     const { container } = render(<ExpectedIncomeNote expectedIncome={cop('0')} availableWithIncome={cop('500')} lowestWithIncome={lowest('500')} />);
@@ -251,8 +251,52 @@ describe('ExpectedIncomeNote', () => {
     expect(screen.queryByText(/Ojo/)).not.toBeInTheDocument();
   });
 
-  it('avisa el día en que faltaría plata antes de que llegue', () => {
-    render(<ExpectedIncomeNote expectedIncome={cop('3000000')} availableWithIncome={cop('2600000')} lowestWithIncome={lowest('-400000')} />);
+  const warn = (lowestDate: string, lastIncome?: string) =>
+    render(
+      <ExpectedIncomeNote
+        expectedIncome={cop('3000000')}
+        availableWithIncome={cop('2600000')}
+        lowestWithIncome={lowest('-400000', lowestDate)}
+        lastExpectedIncomeDate={lastIncome}
+      />,
+    );
+
+  it('si el punto más bajo es antes de que llegue el último ingreso, lo dice', () => {
+    warn('2026-03-30', '2026-04-05');
     expect(screen.getByText('Ojo: el lunes 30 de marzo te faltarían $ 400.000 antes de que llegue lo que esperas.')).toBeInTheDocument();
+  });
+
+  it('si el punto más bajo es después de que llegó el ingreso, dice según lo programado', () => {
+    warn('2026-03-30', '2026-03-05');
+    expect(screen.getByText('Ojo: el lunes 30 de marzo te faltarían $ 400.000 según lo programado.')).toBeInTheDocument();
+    expect(screen.queryByText(/antes de que llegue/)).not.toBeInTheDocument();
+  });
+
+  it('el mismo día del último ingreso ya llegó (el ingreso va primero): según lo programado', () => {
+    warn('2026-03-30', '2026-03-30');
+    expect(screen.getByText('Ojo: el lunes 30 de marzo te faltarían $ 400.000 según lo programado.')).toBeInTheDocument();
+  });
+
+  it('sin fecha del último ingreso no afirma que falte antes de que llegue', () => {
+    warn('2026-03-30');
+    expect(screen.getByText(/según lo programado\./)).toBeInTheDocument();
+  });
+});
+
+describe('aviso tras "Ya lo recibí"', () => {
+  it('muestra el aviso que devuelve la acción', async () => {
+    const h = handlers();
+    h.onSettle.mockResolvedValue({ ok: true, notice: 'Registramos solo el último; los anteriores se dan por recibidos.' });
+    render(<ScheduledScreen kind="income" items={[salary]} accounts={accounts} today="2026-03-10" {...h} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Ya lo recibí: Sueldo' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Registramos solo el último; los anteriores se dan por recibidos.');
+  });
+
+  it('sin aviso no muestra nada', async () => {
+    const h = handlers();
+    render(<ScheduledScreen kind="income" items={[salary]} accounts={accounts} today="2026-03-10" {...h} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Ya lo recibí: Sueldo' }));
+    expect(h.onSettle).toHaveBeenCalled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

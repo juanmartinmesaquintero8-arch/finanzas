@@ -69,22 +69,41 @@ describe('ingresos programados: crear, editar y borrar', () => {
     const [item] = await s.scheduledIncomes.list();
     await s.scheduledIncomes.receive(item!.id, '2026-03-10');
     await s.scheduledIncomes.update(item!.id, salary({ description: 'Cambiado' }));
-    expect((await s.scheduledIncomes.list())[0]).toMatchObject({ description: 'Cambiado', settledThrough: '2026-03-10' });
+    expect((await s.scheduledIncomes.list())[0]).toMatchObject({ description: 'Cambiado', settledThrough: '2026-02-28' });
   });
 });
 
 describe('"Ya lo recibí"', () => {
-  it('crea un INCOME real por cada ocurrencia vencida, en su cuenta, con su fecha y su categoría', async () => {
-    await s.scheduledIncomes.create(salary()); // 30 ene, 28 feb
+  it('con varias fechas vencidas registra SOLO la última, con su cuenta, su fecha y su categoría, y avisa', async () => {
+    await s.scheduledIncomes.create(salary()); // 30 ene y 28 feb ya vencidas
     const [item] = await s.scheduledIncomes.list();
-    expect(await s.scheduledIncomes.receive(item!.id, '2026-03-10')).toEqual({ ok: true });
+    expect(await s.scheduledIncomes.receive(item!.id, '2026-03-10')).toEqual({
+      ok: true,
+      notice: 'Registramos solo el último; los anteriores se dan por recibidos.',
+    });
     const page = await s.transactions.page({});
     expect(page.items.map((t) => [t.date.slice(0, 10), t.type, t.amount.amount, t.description, t.accountId, t.category])).toEqual([
       ['2026-02-28', 'INCOME', '3000000', 'Sueldo', accountId, 'Salario'],
-      ['2026-01-30', 'INCOME', '3000000', 'Sueldo', accountId, 'Salario'],
     ]);
-    expect((await s.scheduledIncomes.list())[0]!.settledThrough).toBe('2026-03-10');
-    expect((await s.summary.projection('2026-03-31')).netWorth.amount).toBe('7000000');
+    expect((await s.scheduledIncomes.list())[0]!.settledThrough).toBe('2026-02-28');
+    expect((await s.summary.projection('2026-03-31')).netWorth.amount).toBe('4000000');
+  });
+
+  it('con una sola fecha vencida no hay aviso extra', async () => {
+    await s.scheduledIncomes.create(salary({ startDate: '2026-03-05' }));
+    const [item] = await s.scheduledIncomes.list();
+    expect(await s.scheduledIncomes.receive(item!.id, '2026-03-10')).toEqual({ ok: true });
+    expect((await s.transactions.page({})).items).toHaveLength(1);
+  });
+
+  it('después de recibir, la siguiente ocurrencia queda pendiente', async () => {
+    await s.scheduledIncomes.create(salary());
+    const [item] = await s.scheduledIncomes.list();
+    await s.scheduledIncomes.receive(item!.id, '2026-03-10');
+    const p = await s.summary.projection('2026-03-31');
+    expect(p.expectedIncome.amount).toBe('3000000'); // el 30 de marzo
+    expect(await s.scheduledIncomes.receive(item!.id, '2026-03-31')).toEqual({ ok: true });
+    expect((await s.transactions.page({})).items.map((t) => t.date.slice(0, 10))).toEqual(['2026-03-30', '2026-02-28']);
   });
 
   it('hace una sola escritura en la base', async () => {
@@ -102,14 +121,14 @@ describe('"Ya lo recibí"', () => {
     const [item] = await s.scheduledIncomes.list();
     await s.scheduledIncomes.receive(item!.id, '2026-03-10');
     expect(await s.scheduledIncomes.receive(item!.id, '2026-03-10')).toEqual({ ok: false, error: expect.stringMatching(/ya está registrado/i) });
-    expect((await s.transactions.page({})).items).toHaveLength(2);
+    expect((await s.transactions.page({})).items).toHaveLength(1);
   });
 
   it('doble toque a la vez: no duplica movimientos', async () => {
     await s.scheduledIncomes.create(salary());
     const [item] = await s.scheduledIncomes.list();
     await Promise.all([s.scheduledIncomes.receive(item!.id, '2026-03-10'), s.scheduledIncomes.receive(item!.id, '2026-03-10')]);
-    expect((await s.transactions.page({})).items).toHaveLength(2);
+    expect((await s.transactions.page({})).items).toHaveLength(1);
   });
 
   it('sin ocurrencias por recibir avisa y no escribe nada', async () => {
@@ -167,7 +186,7 @@ describe('proyección con ingresos programados', () => {
     const without = await s.summary.projection('2026-03-31');
     await s.scheduledIncomes.create(salary({ startDate: '2026-03-30' }));
     const withIncome = await s.summary.projection('2026-03-31');
-    const strip = ({ expectedIncome: _a, availableWithIncome: _b, lowestWithIncome: _c, ...rest }: typeof withIncome) => rest;
+    const strip = ({ expectedIncome: _a, availableWithIncome: _b, lowestWithIncome: _c, lastExpectedIncomeDate: _d, ...rest }: typeof withIncome) => rest;
     expect(strip(withIncome)).toEqual(strip(without));
     expect(withIncome.availableBalance.amount).toBe('500000');
   });

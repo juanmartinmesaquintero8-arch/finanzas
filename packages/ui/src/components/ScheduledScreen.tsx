@@ -27,9 +27,11 @@ interface Props {
   withCategory?: boolean;
 }
 
-async function ensureOk(promise: Promise<ActionResult>): Promise<void> {
+/** Lanza si falló; si salió bien devuelve el aviso opcional de la acción. */
+async function ensureOk(promise: Promise<ActionResult>): Promise<string | void> {
   const res = await promise;
   if (!res.ok) throw new Error(res.error);
+  return res.notice;
 }
 
 /** Pantalla de gastos o ingresos programados: sólo presentación, las acciones llegan por props. */
@@ -70,7 +72,7 @@ export function ScheduledScreen({ items, accounts, today, onCreate, onUpdate, on
         accounts={accounts}
         today={today}
         onSettle={(id, through) => ensureOk(onSettle(id, through))}
-        onDelete={(id) => ensureOk(onDelete(id))}
+        onDelete={async (id) => void (await ensureOk(onDelete(id)))}
         onEdit={(item) => {
           setCreating(false);
           setEditing(item);

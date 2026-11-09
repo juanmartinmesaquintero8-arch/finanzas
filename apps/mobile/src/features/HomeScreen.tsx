@@ -53,6 +53,7 @@ export function HomeScreen() {
         expectedIncome={projection.expectedIncome}
         availableWithIncome={projection.availableWithIncome}
         lowestWithIncome={projection.lowestWithIncome}
+        lastExpectedIncomeDate={projection.lastExpectedIncomeDate}
       />
       {spending && spending.total !== '0' && <SpendingHomeCard total={spending.total} href={routes.spending()} />}
       <AccountCards accounts={projection.accounts} editHref={routes.editAccount} />
