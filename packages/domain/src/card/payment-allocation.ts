@@ -7,8 +7,6 @@ import { CreditCard, YearMonth } from './credit-card';
 import { purchaseSchedule } from './purchase-schedule';
 
 export interface AllocateOptions {
-  /** No cambia el reparto; se guarda en el pago para recalcular las cuotas. */
-  mode?: ExtraMode;
   /** Compra que recibe primero la plata de más. Si no se da: mayor tasa, luego la más antigua, luego el id. */
   extraPurchaseId?: string;
   purchases: readonly PurchaseBalance[];

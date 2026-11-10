@@ -70,7 +70,11 @@ export function createCardPayment(props: CardPaymentProps): CardPayment {
   });
 }
 
-/** La fecha de un pago no puede ser futura ni anterior al último pago de esa tarjeta (el mismo día sí). */
+/**
+ * La fecha de un pago no puede ser futura ni anterior al último pago de esa tarjeta (el mismo día sí).
+ * `paidOn` y `today` deben ser el día calendario de Colombia (America/Bogota) como fecha UTC a medianoche:
+ * aquí solo se compara el día UTC.
+ */
 export function validatePaymentDate(paidOn: Date, cardPayments: readonly CardPayment[], today: Date): void {
   const day = startOfDayUTC(paidOn).getTime();
   assertDomain(day <= startOfDayUTC(today).getTime(), 'La fecha del pago no puede ser futura.');

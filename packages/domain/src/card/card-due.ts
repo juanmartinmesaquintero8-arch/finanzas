@@ -99,6 +99,7 @@ export function compareDue(purchaseDates: ReadonlyMap<string, number>) {
  * Lo que se debe en la tarjeta al día `on`: lo vencido (`dueDate < on`) y lo del periodo actual
  * (hasta la próxima fecha de pago inclusive), ya sin lo pagado, en el orden en que se reparte un pago.
  * Una cuota entra solo cuando su corte ya pasó: antes, su interés aún no está definido.
+ * `on` debe ser el día calendario de Colombia (America/Bogota) como fecha UTC a medianoche.
  */
 export function cardDue(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], on: Date): DueItem[] {
   const today = startOfDayUTC(on).getTime();
@@ -137,7 +138,11 @@ export function purchaseBalances(
   });
 }
 
-/** Lo más que se puede pagar hoy: lo vencido y del periodo más todo el capital pendiente (como liquidar hoy). */
+/**
+ * Lo más que se puede pagar hoy = lo vencido y del periodo (`cardDue`) + todo el capital pendiente que no está en eso.
+ * Como solo entran cuotas ya facturadas, equivale a liquidar hoy: capital restante más el interés de la cuota
+ * ya facturada; una cuota aún sin corte no suma interés porque pagarla antes del corte lo deja en cero.
+ */
 export function maxPayment(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], on: Date, currency = 'COP'): Money {
   const due = cardDue(card, purchases, payments, on).map((i) => i.amount);
   const extra = purchaseBalances(card, purchases, payments, on).map((b) => b.extraCapacity);
