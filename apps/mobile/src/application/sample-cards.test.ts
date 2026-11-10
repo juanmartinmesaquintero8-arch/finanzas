@@ -33,6 +33,12 @@ describe('datos de ejemplo con tarjeta', () => {
     expect(card!.debt).toBe('1200000');
   });
 
+  it('la tarjeta de ejemplo trae día de corte', async () => {
+    await s.data.loadSample();
+    const [card] = await s.cards.list();
+    expect(card!.cutDay).toBe(5);
+  });
+
   it('Quitar datos de ejemplo se lleva tarjeta, compra y sus pagos, aunque salgan de una cuenta propia', async () => {
     await s.data.loadSample();
     await s.accounts.create({ name: 'Mía', type: 'BANK', initialBalance: '1000000' });

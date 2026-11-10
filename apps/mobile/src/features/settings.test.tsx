@@ -42,7 +42,7 @@ describe('Ajustes: hacer copia de seguridad', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Hacer copia de seguridad' }));
     expect(await screen.findByRole('status')).toHaveTextContent(/tu copia está lista/i);
     const delivered = deliver.mock.calls[0]![0] as { text: string; fileName: string };
-    expect(JSON.parse(delivered.text)).toMatchObject({ version: 3, accounts: [{ name: 'Bancolombia' }] });
+    expect(JSON.parse(delivered.text)).toMatchObject({ version: 4, accounts: [{ name: 'Bancolombia' }] });
     expect(delivered.fileName).toBe('mis-finanzas-2026-03-10.json');
     expect(await services.backup.lastBackupAt()).not.toBeNull();
     expect(await screen.findByText(/última copia/i)).toBeInTheDocument();

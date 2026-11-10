@@ -1,4 +1,4 @@
-import { Account, CardPurchase, CreditCard, InterestRate, Money, ScheduledExpense, ScheduledIncome, TransactionFactory, defaultFirstDueDate } from '@finanzas/domain';
+import { Account, CardPurchase, CreditCard, InterestRate, Money, ScheduledExpense, ScheduledIncome, TransactionFactory, firstDueDateFor } from '@finanzas/domain';
 import { addDays, addMonthsISO, todayISO } from '@finanzas/ui';
 import type { LedgerSnapshot } from '@/data/idb-ledger-store';
 import { CURRENCY, parseDay } from './support';
@@ -47,6 +47,7 @@ export function generateSampleData(now: Date): LedgerSnapshot {
     id: `${SAMPLE_PREFIX}visa`,
     name: 'Visa de ejemplo',
     dueDay: 15,
+    cutDay: 5,
     paymentAccountId: `${SAMPLE_PREFIX}bancolombia`,
     fee: { kind: 'FIXED_MONTHLY', amount: cop(18_000) },
     rate,
@@ -61,7 +62,7 @@ export function generateSampleData(now: Date): LedgerSnapshot {
     amount: cop(1_200_000),
     installments: 12,
     purchaseDate,
-    firstDueDate: defaultFirstDueDate(purchaseDate, card.dueDay),
+    firstDueDate: firstDueDateFor(purchaseDate, card.dueDay, card.cutDay),
     monthlyRatePpm: rate.monthlyPpm,
     paidInstallments: 0,
     dueDayAnchor: card.dueDay,

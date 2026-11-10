@@ -8,7 +8,7 @@ import {
   buildInstallmentPlan,
   cardDebt,
   cardFeesDue,
-  defaultFirstDueDate,
+  firstDueDateFor,
   isMonthKey,
   looksLikeAnnualAsMonthly,
   parseRatePercent,
@@ -49,7 +49,7 @@ const TOO_BIG = 'El monto es demasiado grande.';
 const BEGINNING = new Date(Date.UTC(2000, 0, 1));
 
 /** Lo que una compra toma de su tarjeta. */
-type CardTerms = Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>;
+type CardTerms = Pick<CardView, 'id' | 'dueDay' | 'cutDay' | 'monthlyRatePpm'>;
 
 /** Lo ya pactado en una compra: editarla no lo cambia por lo que hoy diga la tarjeta. */
 type AgreedTerms = Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'firstDueDate' | 'dueDayAnchor'>;
@@ -72,7 +72,7 @@ function buildPurchase(id: string, input: PurchaseInput, card: CardTerms, existi
   const purchaseDate = parseCardDate(input.purchaseDate);
   const firstDueDate = parseCardDate(input.firstDueDate);
   const sameDates = existing && existing.purchaseDate === isoDay(purchaseDate) && existing.firstDueDate === isoDay(firstDueDate);
-  const isSuggested = defaultFirstDueDate(purchaseDate, card.dueDay).getTime() === firstDueDate.getTime();
+  const isSuggested = firstDueDateFor(purchaseDate, card.dueDay, card.cutDay ?? undefined).getTime() === firstDueDate.getTime();
   const purchase = CardPurchase.create({
     id,
     cardId: input.cardId,
@@ -223,6 +223,7 @@ export class CardService {
       id: card.id,
       name: card.name,
       dueDay: card.dueDay,
+      cutDay: card.cutDay ?? null,
       paymentAccountId: card.paymentAccountId,
       feeKind: card.fee.kind,
       feeAmount: card.fee.kind === 'NONE' ? null : card.fee.amount.amount.toString(),
@@ -254,10 +255,10 @@ export class CardService {
     }
   }
 
-  suggestFirstDueDate(card: Pick<CardView, 'dueDay'>, purchaseDate: string): string | null {
+  suggestFirstDueDate(card: Pick<CardView, 'dueDay' | 'cutDay'>, purchaseDate: string): string | null {
     if (!purchaseDate) return null;
     try {
-      return isoDay(defaultFirstDueDate(parseDay(purchaseDate), card.dueDay));
+      return isoDay(firstDueDateFor(parseDay(purchaseDate), card.dueDay, card.cutDay ?? undefined));
     } catch {
       return null;
     }
@@ -519,6 +520,7 @@ export class CardService {
       id,
       name: input.name,
       dueDay: input.dueDay,
+      cutDay: input.cutDay,
       paymentAccountId: input.paymentAccountId,
       fee: feeOf(input),
       rate: rateOf(input),
@@ -563,7 +565,7 @@ export class CardService {
   }
 
   private termsOf(card: CreditCard): CardTerms {
-    return { id: card.id, dueDay: card.dueDay, monthlyRatePpm: card.rate?.monthlyPpm ?? 0 };
+    return { id: card.id, dueDay: card.dueDay, cutDay: card.cutDay ?? null, monthlyRatePpm: card.rate?.monthlyPpm ?? 0 };
   }
 
   private async requireCard(id: string): Promise<CreditCard> {
