@@ -163,20 +163,17 @@ describe('purchaseSchedule: casos', () => {
     // D = 1.200.000, 12 cuotas, 2 % M.V. Cuota 1: capital 100.000 + interés 24.000.
     const purchase = make();
     const p1 = pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000)]);
-    const s1 = purchaseSchedule(purchase, [p1], undefined, d('2026-03-01')).map(row);
+    const s1 = purchaseSchedule(purchase, [p1]).map(row);
     expect(s1[0]).toEqual({ number: 1, capitalDue: 100_000n, interestDue: 24_000n, capitalPaid: 36_000n, interestPaid: 24_000n, remaining: 64_000n });
     // Capital debido al corte de la cuota 2 (15 feb): 1.200.000 − 36.000 = 1.164.000; × 2 % = 23.280 (el plan decía 22.000).
     expect(s1[1]).toEqual({ number: 2, capitalDue: 100_000n, interestDue: 23_280n, capitalPaid: 0n, interestPaid: 0n, remaining: 123_280n });
-    // El corte de la cuota 3 (15 mar) aún no llega: se proyecta como si lo anterior se pagara a tiempo.
-    expect(s1[2].interestDue).toBe(20_000n);
-    // Si llega el 15 de marzo sin más pagos, la cuota 3 se calcula sobre 1.164.000.
-    expect(purchaseSchedule(purchase, [p1], undefined, d('2026-03-16'))[2].interestDue.amount).toBe(23_280n);
-    // El mismo día del pago (corte de la cuota 2) aún se puede abonar: se proyecta.
-    expect(purchaseSchedule(purchase, [p1])[1].interestDue.amount).toBe(22_000n);
+    // Cuota 3 (corte 15 mar): los 64.000 que faltan siguen; la cuota 2, sin pagos aún, se supone pagada a tiempo.
+    // 1.200.000 − 36.000 − 100.000 = 1.064.000 → 21.280.
+    expect(s1[2].interestDue).toBe(21_280n);
 
     // Segundo pago el 1 de marzo: primero cierra lo que faltaba de la cuota 1.
     const p2 = pay(2, d('2026-03-01'), [inst(1, 0, 64_000), inst(2, 23_280, 12_720)]);
-    const s2 = purchaseSchedule(purchase, [p1, p2], undefined, d('2026-03-16')).map(row);
+    const s2 = purchaseSchedule(purchase, [p1, p2]).map(row);
     expect(s2[0].remaining).toBe(0n);
     expect(s2[1]).toEqual({ number: 2, capitalDue: 100_000n, interestDue: 23_280n, capitalPaid: 12_720n, interestPaid: 23_280n, remaining: 87_280n });
     // Al 15 de marzo se deben 1.200.000 − 112.720 = 1.087.280 → 21.745,6 → 21.746.

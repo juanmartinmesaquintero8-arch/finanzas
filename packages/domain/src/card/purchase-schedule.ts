@@ -49,11 +49,6 @@ interface Row {
   touched: boolean;
 }
 
-interface CapitalEvent {
-  on: number;
-  capital: bigint;
-}
-
 function sortedBySeq(payments: readonly CardPayment[]): CardPayment[] {
   return [...payments].sort((a, b) => a.seq - b.seq);
 }
@@ -77,8 +72,9 @@ function applyExtra(rows: Row[], extra: bigint, mode: ExtraMode | undefined): vo
 /**
  * Cuotas de una compra con los pagos aplicados (una fila por cuota que siga existiendo).
  * - Las `paidInstallments` heredadas cuentan como pagadas, con capital e interés del plan.
- * - Interés de la cuota k = round_half_up(O_k · ppm / 10^6). Si su corte ya pasó (antes de `on` o del último pago),
- *   O_k = D − capital pagado hasta el corte; si no, se proyecta como si lo anterior se pagara a tiempo.
+ * - Interés de la cuota k = round_half_up(O_k · ppm / 10^6), con O_k = D − capital pagado hasta su corte
+ *   (pagos con fecha ≤ corte). Las cuotas anteriores que no recibieron ningún pago se suponen pagadas a tiempo,
+ *   así sin pagos nuevos nada cambia; lo que falta de una cuota con pago parcial sigue en O_k.
  * - Plata de más: recálculo SHORTEN o LOWER de las cuotas que siguen, en orden de `seq`; las fechas no cambian.
  * Sin pagos, o pagando cada cuota completa en su fecha, es idéntico a `buildInstallmentPlan`.
  */
@@ -86,7 +82,6 @@ export function purchaseSchedule(
   purchase: CardPurchase,
   payments: readonly CardPayment[],
   cutDay?: number,
-  on?: Date,
 ): ScheduledInstallment[] {
   const plan = buildInstallmentPlan(purchase);
   const currency = purchase.amount.currency;
@@ -106,9 +101,29 @@ export function purchaseSchedule(
     };
   });
 
-  const events: CapitalEvent[] = [];
+  const cuts = cutDates(purchase, plan, purchase.isClosed ? undefined : cutDay);
+  const debt = purchase.amount.amount;
+  let capitalPaid = plan.slice(0, inherited).reduce((a, i) => a + i.capital.amount, 0n);
+  let frozen = inherited;
+
+  const freeze = (k: number): void => {
+    const row = rows[k];
+    if (!row.exists) return;
+    // Las cuotas anteriores sin ningún pago se suponen pagadas a tiempo; lo que falta de las tocadas sigue debiéndose.
+    const assumed = rows.slice(0, k).reduce((a, r) => (r.exists && !r.touched ? a + r.capitalDue : a), 0n);
+    row.interestDue = interestOn(debt - capitalPaid - assumed, purchase.monthlyRatePpm);
+  };
+  // Fija el interés de cada cuota cuyo corte ya pasó, con lo que se sabía ese día.
+  const freezeThrough = (limit: number): void => {
+    while (frozen < rows.length && cuts[frozen].getTime() < limit) {
+      freeze(frozen);
+      frozen++;
+    }
+  };
+
   for (const payment of own) {
     const paidOn = time(payment.paidOn);
+    freezeThrough(paidOn);
     let extra = 0n;
     for (const a of payment.allocations) {
       if (a.kind === 'FEE' || a.purchaseId !== purchase.id) continue;
@@ -122,33 +137,15 @@ export function purchaseSchedule(
       row.interestPaid += a.interest.amount;
       row.touched = true;
       assertDomain(row.capitalPaid <= row.capitalDue, 'El pago supera el capital de la cuota');
-      if (a.capital.isPositive()) events.push({ on: paidOn, capital: a.capital.amount });
+      capitalPaid += a.capital.amount;
     }
     if (extra > 0n) {
       applyExtra(rows, extra, payment.extraMode);
-      events.push({ on: paidOn, capital: extra });
+      capitalPaid += extra;
     }
   }
-
-  // Lo que ya se sabe: hasta `on` o hasta el último pago de la tarjeta, lo que sea más tarde.
-  const known = payments.reduce((max, p) => Math.max(max, time(p.paidOn)), on === undefined ? Number.NEGATIVE_INFINITY : time(on));
-  const cuts = cutDates(purchase, plan, purchase.isClosed ? undefined : cutDay);
-  const debt = purchase.amount.amount;
-  const inheritedCapital = plan.slice(0, inherited).reduce((a, i) => a + i.capital.amount, 0n);
-
-  for (let k = inherited; k < rows.length; k++) {
-    const row = rows[k];
-    if (!row.exists) continue;
-    const cut = cuts[k].getTime();
-    let owed: bigint;
-    if (cut < known) {
-      owed = debt - inheritedCapital - events.filter((e) => e.on <= cut).reduce((a, e) => a + e.capital, 0n);
-    } else {
-      owed = rows.slice(k).reduce((a, r) => (r.exists ? a + r.capitalDue - r.capitalPaid : a), 0n);
-    }
-    row.interestDue = interestOn(owed, purchase.monthlyRatePpm);
-    assertDomain(row.interestPaid <= row.interestDue, 'El interés pagado supera el de la cuota');
-  }
+  freezeThrough(Number.POSITIVE_INFINITY);
+  for (const row of rows) assertDomain(row.interestPaid <= row.interestDue, 'El interés pagado supera el de la cuota');
 
   const out: ScheduledInstallment[] = [];
   rows.forEach((row, k) => {
