@@ -41,6 +41,7 @@ interface Props {
 export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card, checkImpact }: Props) {
   const [name, setName] = useState(card?.name ?? '');
   const [dueDayText, setDueDayText] = useState(card ? String(card.dueDay) : '');
+  const [cutDayText, setCutDayText] = useState(card?.cutDay ? String(card.cutDay) : '');
   const [paymentAccountId, setPaymentAccountId] = useState(card?.paymentAccountId ?? '');
   const [feeKind, setFeeKind] = useState<CardFeeKind>(card?.feeKind ?? 'NONE');
   const [feeAmountText, setFeeAmountText] = useState(card?.feeAmount ? formatGroupedDigits(card.feeAmount) : '');
@@ -56,7 +57,7 @@ export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const result = validateCardForm({ name, dueDayText, paymentAccountId, feeKind, feeAmountText, hasInterest, rateBasis, rateText }, checkRate);
+    const result = validateCardForm({ name, dueDayText, cutDayText, cutRequired: !card, paymentAccountId, feeKind, feeAmountText, hasInterest, rateBasis, rateText }, checkRate);
     if (!result.ok) {
       setErrors(result.errors);
       return;
@@ -107,6 +108,14 @@ export function CardForm({ accounts, checkRate, onSubmit, onDone, onCancel, card
         </label>
         <input id="cc-day" className={ui.input} inputMode="numeric" maxLength={2} autoComplete="off" placeholder="1 a 31" value={dueDayText} aria-invalid={errors.dueDay ? 'true' : undefined} onChange={(e) => setDueDayText(e.target.value.replace(/\D/g, ''))} />
         {errors.dueDay && <p className={ui.error}>{errors.dueDay}</p>}
+      </div>
+      <div className={ui.field}>
+        <label className={ui.label} htmlFor="cc-cut">
+          Día de corte
+        </label>
+        <input id="cc-cut" className={ui.input} inputMode="numeric" maxLength={2} autoComplete="off" placeholder="1 a 31" value={cutDayText} aria-invalid={errors.cutDay ? 'true' : undefined} aria-describedby="cc-cut-help" onChange={(e) => setCutDayText(e.target.value.replace(/D/g, ''))} />
+        <p id="cc-cut-help" className={styles.help}>Es el día en que el banco cierra tu extracto. Lo encuentras en el extracto como &quot;fecha de corte&quot;.</p>
+        {errors.cutDay && <p className={ui.error}>{errors.cutDay}</p>}
       </div>
       <ChipGroup label="Se paga desde" options={accounts.map((a) => ({ value: a.id, label: a.name }))} value={paymentAccountId} onChange={setPaymentAccountId} />
       {errors.account && <p className={ui.error}>{errors.account}</p>}

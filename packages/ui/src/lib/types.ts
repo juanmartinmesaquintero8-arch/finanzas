@@ -193,6 +193,8 @@ export interface CardView {
   id: string;
   name: string;
   dueDay: number;
+  /** Día en que el banco cierra el extracto; null si aún no se ha dicho. */
+  cutDay: number | null;
   paymentAccountId: string;
   feeKind: CardFeeKind;
   feeAmount: string | null;
@@ -221,6 +223,7 @@ export interface FeeImpact {
 export interface CardInput {
   name: string;
   dueDay: number;
+  cutDay?: number;
   paymentAccountId: string;
   feeKind: CardFeeKind;
   feeAmount?: string;

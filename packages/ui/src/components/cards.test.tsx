@@ -50,6 +50,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   id: 'c1',
   name: 'Visa Bancolombia',
   dueDay: 15,
+  cutDay: 5,
   paymentAccountId: 'nu',
   feeKind: 'FIXED_MONTHLY',
   feeAmount: '18000',
@@ -149,7 +150,7 @@ describe('textos de fechas y resumen', () => {
 });
 
 describe('validación del formulario de tarjeta', () => {
-  const values = (over: Partial<CardFormValues> = {}): CardFormValues => ({ name: 'Visa', dueDayText: '15', paymentAccountId: 'bc', feeKind: 'NONE', feeAmountText: '', hasInterest: false, rateBasis: 'MV', rateText: '', ...over });
+  const values = (over: Partial<CardFormValues> = {}): CardFormValues => ({ name: 'Visa', dueDayText: '15', cutDayText: '5', cutRequired: true, paymentAccountId: 'bc', feeKind: 'NONE', feeAmountText: '', hasInterest: false, rateBasis: 'MV', rateText: '', ...over });
   const check = () => ({});
 
   it('errores con el texto exacto', () => {
@@ -176,11 +177,11 @@ describe('validación del formulario de tarjeta', () => {
   it('solo envía el manejo y la tasa si aplican', () => {
     expect(validateCardForm(values({ feeAmountText: '5.000', rateText: '2' }), check)).toEqual({
       ok: true,
-      value: { name: 'Visa', dueDay: 15, paymentAccountId: 'bc', feeKind: 'NONE' },
+      value: { name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'NONE' },
     });
     expect(validateCardForm(values({ feeKind: 'FIXED_MONTHLY', feeAmountText: '18.000', hasInterest: true, rateBasis: 'EA', rateText: '26,82' }), check)).toEqual({
       ok: true,
-      value: { name: 'Visa', dueDay: 15, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'EA', rateText: '26,82' },
+      value: { name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'EA', rateText: '26,82' },
     });
   });
 });
@@ -245,12 +246,13 @@ describe('CardForm', () => {
     const a = setup();
     await userEvent.type(screen.getByLabelText('Nombre'), 'Visa');
     await userEvent.type(screen.getByLabelText('Día en que pagas'), '15');
+    await userEvent.type(screen.getByLabelText('Día de corte'), '5');
     await userEvent.click(screen.getByRole('radio', { name: 'Bancolombia' }));
     await userEvent.click(screen.getByRole('radio', { name: 'Con intereses' }));
     await userEvent.type(screen.getByLabelText('Tasa'), '5');
     expect(await screen.findByText('Esa tasa parece muy alta. Revisa que no sea la anual puesta como mensual.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar tarjeta' }));
-    expect(a.createCard).toHaveBeenCalledWith({ name: 'Visa', dueDay: 15, paymentAccountId: 'bc', feeKind: 'NONE', rateBasis: 'MV', rateText: '5' });
+    expect(a.createCard).toHaveBeenCalledWith({ name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'NONE', rateBasis: 'MV', rateText: '5' });
   });
 
   it('muestra los errores y no envía', async () => {

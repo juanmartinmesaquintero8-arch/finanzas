@@ -246,3 +246,8 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+.cutNotice {
+  display: grid;
+  gap: 8px;
+}

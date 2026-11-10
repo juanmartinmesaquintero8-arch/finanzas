@@ -24,7 +24,7 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   monthlyRatePpm: 20000, closedOn: null, dueDayAnchor: 15, next: inst(1, '2026-12-15'), settle: { capital: '1200000', interest: '24000', total: '1224000' }, ...over,
 });
 const card = (over: Partial<CardView> = {}): CardView => ({
-  id: 'c1', name: 'Visa', dueDay: 15, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'MV', rateText: '2', monthlyRatePpm: 20000, chargesInterest: true, debt: '900000',
+  id: 'c1', name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'MV', rateText: '2', monthlyRatePpm: 20000, chargesInterest: true, debt: '900000',
   next: { amount: '118000', date: '2026-12-15' }, purchases: [purchase()], pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }], lastPaidFeeMonth: null, ...over,
 });
 
