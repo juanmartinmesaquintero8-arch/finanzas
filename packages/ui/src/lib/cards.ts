@@ -34,10 +34,10 @@ export interface CardsApi {
   purchaseRemovalImpact(purchaseId: string): Promise<FeeImpact>;
   purchaseChangeImpact(purchaseId: string, input: PurchaseInput): Promise<FeeImpact>;
   checkRate(text: string, basis: RateBasis): RateCheck;
-  suggestFirstDueDate(card: Pick<CardView, 'dueDay'>, purchaseDate: string): string | null;
+  suggestFirstDueDate(card: Pick<CardView, 'dueDay' | 'cutDay'>, purchaseDate: string): string | null;
   /** Con `agreed`, calcula con lo que ya se pactó en esa compra y no con la tasa actual de la tarjeta. */
   previewPurchase(
-    card: Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>,
+    card: Pick<CardView, 'id' | 'dueDay' | 'cutDay' | 'monthlyRatePpm'>,
     input: PurchaseInput,
     agreed?: Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'firstDueDate' | 'dueDayAnchor'>,
   ): PurchasePreviewResult;
@@ -57,6 +57,9 @@ function wholeIn(text: string, min: number, max: number): number | null {
 export interface CardFormValues {
   name: string;
   dueDayText: string;
+  cutDayText: string;
+  /** En una tarjeta nueva el corte es obligatorio; al editar una vieja puede quedar vacío. */
+  cutRequired: boolean;
   paymentAccountId: string;
   feeKind: CardFeeKind;
   feeAmountText: string;
@@ -70,6 +73,12 @@ export function validateCardForm(v: CardFormValues, checkRate: CardsApi['checkRa
   if (!v.name.trim()) errors.name = 'Escribe el nombre de la tarjeta.';
   const dueDay = wholeIn(v.dueDayText, 1, 31);
   if (dueDay === null) errors.dueDay = 'El día de pago va de 1 a 31.';
+  const cutText = v.cutDayText.trim();
+  const cutDay = wholeIn(cutText, 1, 31);
+  if (cutText === '') {
+    if (v.cutRequired) errors.cutDay = 'Escribe el día de corte.';
+  } else if (cutDay === null) errors.cutDay = 'El día de corte va de 1 a 31.';
+  else if (cutDay === dueDay) errors.cutDay = 'El día de corte no puede ser el mismo día de pago.';
   if (!v.paymentAccountId) errors.account = 'Elige la cuenta desde la que pagas.';
   const charges = v.feeKind !== 'NONE';
   const feeAmount = charges ? parseAmountInput(v.feeAmountText) : null;
@@ -83,6 +92,7 @@ export function validateCardForm(v: CardFormValues, checkRate: CardsApi['checkRa
   }
   if (Object.keys(errors).length > 0 || dueDay === null) return { ok: false, errors };
   const value: CardInput = { name: v.name.trim(), dueDay, paymentAccountId: v.paymentAccountId, feeKind: v.feeKind };
+  if (cutDay !== null) value.cutDay = cutDay;
   if (feeAmount) value.feeAmount = feeAmount;
   if (v.hasInterest) {
     value.rateBasis = v.rateBasis;
@@ -137,6 +147,13 @@ export function feeImpactText(impact: FeeImpact): string | null {
   const parts: string[] = [];
   if (impact.lostCount > 0) parts.push(`Dejarás de ver ${count(impact.lostCount)} por ${formatMoneyCompact(impact.lostAmount)}.`);
   if (impact.changedCount > 0) parts.push(`Cambiará el valor de ${count(impact.changedCount)} sin pagar.`);
+  const moved = impact.movedCount ?? 0;
+  if (moved > 0) parts.push(`Cambiará la fecha de ${count(moved)} sin pagar.`);
+  const added = impact.newCount ?? 0;
+  if (added > 0) {
+    const by = formatMoneyCompact(impact.newAmount ?? '0');
+    parts.push(added === 1 ? `Aparecerá 1 cuota de manejo nueva por ${by}.` : `Aparecerán ${added} cuotas de manejo nuevas por ${by}.`);
+  }
   return parts.length > 0 ? parts.join(' ') : null;
 }
 

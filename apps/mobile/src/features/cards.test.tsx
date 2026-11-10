@@ -41,6 +41,7 @@ describe('Programados: Tarjetas', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Agregar tarjeta' }));
     await userEvent.type(await screen.findByLabelText('Nombre'), 'Visa Bancolombia');
     await userEvent.type(screen.getByLabelText('Día en que pagas'), '15');
+    await userEvent.type(screen.getByLabelText('Día de corte'), '5');
     await userEvent.click(screen.getByRole('radio', { name: 'Bancolombia' }));
     await userEvent.click(screen.getByRole('radio', { name: 'Con intereses' }));
     await userEvent.type(screen.getByLabelText('Tasa'), '2');

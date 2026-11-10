@@ -193,6 +193,8 @@ export interface CardView {
   id: string;
   name: string;
   dueDay: number;
+  /** Día en que el banco cierra el extracto; null si aún no se ha dicho. */
+  cutDay: number | null;
   paymentAccountId: string;
   feeKind: CardFeeKind;
   feeAmount: string | null;
@@ -216,11 +218,17 @@ export interface FeeImpact {
   lostCount: number;
   lostAmount: string;
   changedCount: number;
+  /** Cuotas que cambian de fecha sin cambiar de valor (solo al cambiar el corte). */
+  movedCount?: number;
+  /** Cuotas que antes no se veían y aparecerían (solo al cambiar el corte). */
+  newCount?: number;
+  newAmount?: string;
 }
 
 export interface CardInput {
   name: string;
   dueDay: number;
+  cutDay?: number;
   paymentAccountId: string;
   feeKind: CardFeeKind;
   feeAmount?: string;

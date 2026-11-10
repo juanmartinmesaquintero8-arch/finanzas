@@ -133,6 +133,14 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
         <p className={styles.debt}>Debes en total {formatMoneyCompact(card.debt)}</p>
         <p className={styles.next}>{nextLine(card, today)}</p>
       </div>
+      {card.cutDay === null && (
+        <div className={styles.cutNotice}>
+          <p className={styles.warning}>Agrega el día de corte para que las fechas de tus cuotas salgan exactas.</p>
+          <button type="button" className={ui.buttonGhost} aria-label={`Agregar día de corte a ${card.name}`} onClick={onEdit}>
+            Agregar día de corte
+          </button>
+        </div>
+      )}
       <button type="button" className={ui.button} aria-label={`Agregar compra en ${card.name}`} onClick={onAddPurchase}>
         Agregar compra
       </button>

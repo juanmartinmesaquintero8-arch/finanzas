@@ -7,8 +7,9 @@ import {
   UnknownAccountError,
   buildInstallmentPlan,
   cardDebt,
+  billingMonthOf,
   cardFeesDue,
-  defaultFirstDueDate,
+  firstDueDateFor,
   isMonthKey,
   looksLikeAnnualAsMonthly,
   parseRatePercent,
@@ -49,7 +50,7 @@ const TOO_BIG = 'El monto es demasiado grande.';
 const BEGINNING = new Date(Date.UTC(2000, 0, 1));
 
 /** Lo que una compra toma de su tarjeta. */
-type CardTerms = Pick<CardView, 'id' | 'dueDay' | 'monthlyRatePpm'>;
+type CardTerms = Pick<CardView, 'id' | 'dueDay' | 'cutDay' | 'monthlyRatePpm'>;
 
 /** Lo ya pactado en una compra: editarla no lo cambia por lo que hoy diga la tarjeta. */
 type AgreedTerms = Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'firstDueDate' | 'dueDayAnchor'>;
@@ -72,7 +73,7 @@ function buildPurchase(id: string, input: PurchaseInput, card: CardTerms, existi
   const purchaseDate = parseCardDate(input.purchaseDate);
   const firstDueDate = parseCardDate(input.firstDueDate);
   const sameDates = existing && existing.purchaseDate === isoDay(purchaseDate) && existing.firstDueDate === isoDay(firstDueDate);
-  const isSuggested = defaultFirstDueDate(purchaseDate, card.dueDay).getTime() === firstDueDate.getTime();
+  const isSuggested = firstDueDateFor(purchaseDate, card.dueDay, card.cutDay ?? undefined).getTime() === firstDueDate.getTime();
   const purchase = CardPurchase.create({
     id,
     cardId: input.cardId,
@@ -199,7 +200,6 @@ function previousMonth(month: string): string {
   return addMonthsISO(`${month}-01`, -1).slice(0, 7);
 }
 
-const monthOf = (date: Date): string => isoDay(date).slice(0, 7);
 
 /** Fin del mes siguiente: hasta ahí se listan las cuotas de manejo pendientes. */
 function feeHorizon(today: string): Date {
@@ -223,6 +223,7 @@ export class CardService {
       id: card.id,
       name: card.name,
       dueDay: card.dueDay,
+      cutDay: card.cutDay ?? null,
       paymentAccountId: card.paymentAccountId,
       feeKind: card.fee.kind,
       feeAmount: card.fee.kind === 'NONE' ? null : card.fee.amount.amount.toString(),
@@ -254,10 +255,10 @@ export class CardService {
     }
   }
 
-  suggestFirstDueDate(card: Pick<CardView, 'dueDay'>, purchaseDate: string): string | null {
+  suggestFirstDueDate(card: Pick<CardView, 'dueDay' | 'cutDay'>, purchaseDate: string): string | null {
     if (!purchaseDate) return null;
     try {
-      return isoDay(defaultFirstDueDate(parseDay(purchaseDate), card.dueDay));
+      return isoDay(firstDueDateFor(parseDay(purchaseDate), card.dueDay, card.cutDay ?? undefined));
     } catch {
       return null;
     }
@@ -273,7 +274,7 @@ export class CardService {
     if (!existing) return NO_FEE_IMPACT;
     let after: CreditCard;
     try {
-      after = this.buildCard(cardId, input, nextFeeStart(existing, feeOf(input), this.currentMonth()), existing.feesSettledThrough);
+      after = this.buildCard(cardId, input, nextFeeStart(existing, feeOf(input), this.currentMonth(input.cutDay)), existing.feesSettledThrough);
     } catch {
       return NO_FEE_IMPACT; // Datos inválidos: los rechaza el guardado, con su propio mensaje.
     }
@@ -308,36 +309,56 @@ export class CardService {
 
   private compareFees(before: CreditCard, beforePurchases: readonly CardPurchase[], after: CreditCard, afterPurchases: readonly CardPurchase[]): FeeImpact {
     const horizon = feeHorizon(todayISO(this.ctx.now()));
-    const next = new Map(cardFeesDue(after, afterPurchases, BEGINNING, horizon).map((f) => [f.month, f.amount.amount]));
+    const next = new Map(cardFeesDue(after, afterPurchases, BEGINNING, horizon).map((f) => [f.month, { amount: f.amount.amount, dueDate: isoDay(f.dueDate) }]));
+    const cutChanged = before.cutDay !== after.cutDay;
     let lostCount = 0;
     let lostAmount = 0n;
     let changedCount = 0;
+    let movedCount = 0;
+    const seen = new Set<string>();
     for (const fee of cardFeesDue(before, beforePurchases, BEGINNING, horizon)) {
-      const amount = next.get(fee.month);
-      if (amount === undefined) {
+      seen.add(fee.month);
+      const upcoming = next.get(fee.month);
+      if (upcoming === undefined) {
         lostCount += 1;
         lostAmount += fee.amount.amount;
-      } else if (amount !== fee.amount.amount) changedCount += 1;
+      } else if (upcoming.amount !== fee.amount.amount) changedCount += 1;
+      else if (cutChanged && upcoming.dueDate !== isoDay(fee.dueDate)) movedCount += 1;
     }
-    return { lostCount, lostAmount: lostAmount.toString(), changedCount };
+    const impact: FeeImpact = { lostCount, lostAmount: lostAmount.toString(), changedCount };
+    if (!cutChanged) return impact;
+    let newCount = 0;
+    let newAmount = 0n;
+    for (const [month, upcoming] of next) {
+      if (seen.has(month)) continue;
+      newCount += 1;
+      newAmount += upcoming.amount;
+    }
+    if (movedCount > 0) impact.movedCount = movedCount;
+    if (newCount > 0) {
+      impact.newCount = newCount;
+      impact.newAmount = newAmount.toString();
+    }
+    return impact;
   }
 
-  private currentMonth(): string {
-    return todayISO(this.ctx.now()).slice(0, 7);
+  /** El mes de facturación abierto hoy: el calendario sin corte; con corte, el ciclo que aún no ha cerrado. */
+  private currentMonth(cutDay?: number): string {
+    return billingMonthOf(parseDay(todayISO(this.ctx.now())), cutDay);
   }
 
   /** Una compra nueva en un mes ya cerrado no genera manejo (solo aplica si cobra por movimiento y ese mes no tenía compras). */
   private latePurchaseNotice(card: CreditCard, others: readonly CardPurchase[], purchase: CardPurchase): string | undefined {
     if (card.fee.kind !== 'ON_MOVEMENT' || card.feesSettledThrough === undefined) return undefined;
-    const month = monthOf(purchase.purchaseDate);
+    const month = billingMonthOf(purchase.purchaseDate, card.cutDay);
     if (month > card.feesSettledThrough || month < card.feeStartMonth) return undefined;
-    return others.some((p) => monthOf(p.purchaseDate) === month) ? undefined : LATE_PURCHASE;
+    return others.some((p) => billingMonthOf(p.purchaseDate, card.cutDay) === month) ? undefined : LATE_PURCHASE;
   }
 
   createCard(input: CardInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       if ((await this.ctx.cards.findAll()).length >= MAX_CREDIT_CARDS) throw new AppError(`Llegaste al máximo de ${MAX_CREDIT_CARDS} tarjetas.`);
-      const card = this.buildCard(this.ctx.newId(), input, this.currentMonth());
+      const card = this.buildCard(this.ctx.newId(), input, this.currentMonth(input.cutDay));
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
     });
@@ -347,7 +368,7 @@ export class CardService {
   updateCard(id: string, input: CardInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const existing = await this.requireCard(id);
-      const feeStart = nextFeeStart(existing, feeOf(input), this.currentMonth());
+      const feeStart = nextFeeStart(existing, feeOf(input), this.currentMonth(input.cutDay));
       const card = this.buildCard(id, input, feeStart, existing.feesSettledThrough);
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
@@ -391,7 +412,7 @@ export class CardService {
       const purchase = buildPurchase(id, input, this.termsOf(card), agreedOf(existing));
       const others = (await this.ctx.purchases.findByCard(card.id)).filter((p) => p.id !== id);
       await this.ctx.purchases.save(purchase);
-      return monthOf(purchase.purchaseDate) === monthOf(existing.purchaseDate) ? undefined : this.latePurchaseNotice(card, others, purchase);
+      return billingMonthOf(purchase.purchaseDate, card.cutDay) === billingMonthOf(existing.purchaseDate, card.cutDay) ? undefined : this.latePurchaseNotice(card, others, purchase);
     });
   }
 
@@ -519,6 +540,7 @@ export class CardService {
       id,
       name: input.name,
       dueDay: input.dueDay,
+      cutDay: input.cutDay,
       paymentAccountId: input.paymentAccountId,
       fee: feeOf(input),
       rate: rateOf(input),
@@ -563,7 +585,7 @@ export class CardService {
   }
 
   private termsOf(card: CreditCard): CardTerms {
-    return { id: card.id, dueDay: card.dueDay, monthlyRatePpm: card.rate?.monthlyPpm ?? 0 };
+    return { id: card.id, dueDay: card.dueDay, cutDay: card.cutDay ?? null, monthlyRatePpm: card.rate?.monthlyPpm ?? 0 };
   }
 
   private async requireCard(id: string): Promise<CreditCard> {

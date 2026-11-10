@@ -1,6 +1,7 @@
 import { Money } from '../money/money';
 import { daysInMonthUTC } from '../shared/date';
 import { CardPurchase } from './card-purchase';
+import { cutOnOrAfter, dateInMonth, dueAfter } from './billing-cycle';
 
 export interface Installment {
   number: number;
@@ -28,16 +29,19 @@ export interface SettleOffer {
 const PPM = 1_000_000n;
 const HALF_PPM = 500_000n;
 
-/** Fecha con el día `day` (ajustado a fin de mes) del mes `month` (0-11, admite desbordes) del año `year`. */
-function dateInMonth(year: number, month: number, day: number): Date {
-  const normalizedYear = year + Math.floor(month / 12);
-  const normalizedMonth = ((month % 12) + 12) % 12;
-  return new Date(Date.UTC(normalizedYear, normalizedMonth, Math.min(day, daysInMonthUTC(normalizedYear, normalizedMonth))));
-}
-
 /** Día de pago del mes siguiente a la compra, ajustado a fin de mes. */
 export function defaultFirstDueDate(purchaseDate: Date, dueDay: number): Date {
   return dateInMonth(purchaseDate.getUTCFullYear(), purchaseDate.getUTCMonth() + 1, dueDay);
+}
+
+/**
+ * Primera cuota de una compra. Sin corte, el día de pago del mes siguiente.
+ * Con corte: la compra entra en el primer corte en su fecha o después (el mismo día del corte cuenta)
+ * y vence el primer día de pago estrictamente posterior a ese corte.
+ */
+export function firstDueDateFor(purchaseDate: Date, dueDay: number, cutDay?: number): Date {
+  if (cutDay === undefined) return defaultFirstDueDate(purchaseDate, dueDay);
+  return dueAfter(cutOnOrAfter(purchaseDate, cutDay), dueDay);
 }
 
 function interestOn(balance: bigint, ppm: number): bigint {

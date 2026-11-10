@@ -50,6 +50,8 @@ export interface StoredCreditCard {
   id: string;
   name: string;
   dueDay: number;
+  /** Día de corte del extracto; ausente o null en tarjetas anteriores a esta opción. */
+  cutDay?: number | null;
   paymentAccountId: string;
   feeKind: 'NONE' | 'FIXED_MONTHLY' | 'ON_MOVEMENT';
   feeAmount: string | null;

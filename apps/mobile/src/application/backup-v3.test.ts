@@ -63,7 +63,7 @@ const err = (text: string) => {
 
 describe('copia v3: tarjetas y compras', () => {
   it('la versión es 3 y los topes son 100 tarjetas y 5.000 compras', () => {
-    expect(BACKUP_VERSION).toBe(3);
+    expect(BACKUP_VERSION).toBe(4);
     expect(MAX_ITEMS.creditCards).toBe(100);
     expect(MAX_ITEMS.cardPurchases).toBe(5000);
   });
@@ -81,7 +81,7 @@ describe('copia v3: tarjetas y compras', () => {
 
     const { text, problem } = await s.backup.create();
     expect(problem).toBeNull();
-    expect(JSON.parse(text).version).toBe(3);
+    expect(JSON.parse(text).version).toBe(4);
 
     const otherName = `bk3-otro-${Math.random()}`;
     const otherDb = await openFinanzasDb(otherName);
@@ -153,7 +153,7 @@ describe('copia v3: tarjetas y compras', () => {
   });
 
   it('un archivo más nuevo sigue dando el aviso', () => {
-    expect(err(v3({ version: 4 }))).toBe(NEWER);
+    expect(err(v3({ version: 5 }))).toBe(NEWER);
   });
 
   it('respeta los topes', () => {

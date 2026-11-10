@@ -25,7 +25,7 @@ import { isoDay, parseDay } from './support';
 import { toAccountView, toScheduledView, toTransactionView } from './views';
 
 /** Versión del formato del archivo. Subirla cuando cambie la forma de los datos. */
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
 
 /** Tamaño máximo del archivo de copia (bytes). */
 export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
@@ -71,6 +71,7 @@ function toCardRow(c: CreditCard) {
     id: c.id,
     name: c.name,
     dueDay: c.dueDay,
+    cutDay: c.cutDay ?? null,
     paymentAccountId: c.paymentAccountId,
     fee: c.fee.kind === 'NONE' ? { kind: c.fee.kind } : { kind: c.fee.kind, amount: c.fee.amount.toJSON() },
     rate: c.rate ? { basis: c.rate.basis, ppm: c.rate.ppm } : null,
@@ -295,6 +296,7 @@ function parseCard(raw: unknown): CreditCard {
       id: cardId,
       name,
       dueDay: raw.dueDay as number,
+      cutDay: raw.cutDay === null || raw.cutDay === undefined ? undefined : (raw.cutDay as number),
       paymentAccountId: id(raw.paymentAccountId),
       fee,
       rate,

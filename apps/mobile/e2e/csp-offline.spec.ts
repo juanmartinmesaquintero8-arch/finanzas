@@ -164,6 +164,7 @@ test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violac
   await page.getByRole('button', { name: 'Agregar tarjeta' }).click();
   await page.getByLabel('Nombre').fill('Mi Visa');
   await page.getByLabel('Día en que pagas').fill('15');
+  await page.getByLabel('Día de corte').fill('5');
   await page.getByRole('radio', { name: 'Bancolombia' }).click();
   await page.getByRole('radio', { name: 'Con intereses' }).click();
   await page.getByLabel('Tasa', { exact: true }).fill('2');
