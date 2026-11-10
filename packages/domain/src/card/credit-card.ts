@@ -16,6 +16,8 @@ export interface CreditCardProps {
   id: string;
   name: string;
   dueDay: number;
+  /** Día en que el banco cierra el extracto (1-31, distinto del día de pago). */
+  cutDay?: number;
   paymentAccountId: string;
   fee: CardFee;
   rate?: InterestRate;
@@ -34,12 +36,17 @@ export class CreditCard {
     readonly feeStartMonth: YearMonth,
     readonly rate?: InterestRate,
     readonly feesSettledThrough?: YearMonth,
+    readonly cutDay?: number,
   ) {}
 
   static create(props: CreditCardProps): CreditCard {
     const name = props.name.trim();
     assertDomain(name.length > 0, 'El nombre de la tarjeta es obligatorio');
     assertDomain(Number.isInteger(props.dueDay) && props.dueDay >= 1 && props.dueDay <= 31, 'El día de pago debe estar entre 1 y 31');
+    if (props.cutDay !== undefined) {
+      assertDomain(Number.isInteger(props.cutDay) && props.cutDay >= 1 && props.cutDay <= 31, 'El día de corte va de 1 a 31.');
+      assertDomain(props.cutDay !== props.dueDay, 'El día de corte no puede ser el mismo día de pago.');
+    }
     assertDomain(props.paymentAccountId.length > 0, 'La tarjeta necesita una cuenta de pago');
     if (props.fee.kind !== 'NONE') {
       assertDomain(props.fee.amount.isPositive(), 'La cuota de manejo debe ser mayor que cero');
@@ -57,6 +64,7 @@ export class CreditCard {
       props.feeStartMonth,
       props.rate,
       props.feesSettledThrough,
+      props.cutDay,
     );
   }
 
@@ -65,6 +73,7 @@ export class CreditCard {
       id: this.id,
       name: this.name,
       dueDay: this.dueDay,
+      cutDay: this.cutDay,
       paymentAccountId: this.paymentAccountId,
       fee: this.fee,
       rate: this.rate,
