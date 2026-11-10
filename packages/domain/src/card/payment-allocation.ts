@@ -98,8 +98,8 @@ export interface PaymentPreview {
   outcomes: { purchaseId: string; SHORTEN: PaymentOutcome; LOWER: PaymentOutcome }[];
 }
 
-function outcome(purchase: CardPurchase, payments: readonly CardPayment[], cutDay: number | undefined, currency: string): PaymentOutcome {
-  const pending = purchaseSchedule(purchase, payments, cutDay).filter((r) => r.remaining.isPositive());
+function outcome(purchase: CardPurchase, payments: readonly CardPayment[], cutDay: number | undefined, on: Date, currency: string): PaymentOutcome {
+  const pending = purchaseSchedule(purchase, payments, cutDay, on).filter((r) => r.remaining.isPositive());
   return { remainingInstallments: pending.length, nextInstallment: pending[0]?.remaining ?? Money.zero(currency) };
 }
 
@@ -160,8 +160,8 @@ export function paymentPreview(
       const purchase = balances.find((b) => b.purchase.id === extra.purchaseId)!.purchase;
       outcomes.push({
         purchaseId: purchase.id,
-        SHORTEN: outcome(purchase, shorten, card.cutDay, currency),
-        LOWER: outcome(purchase, lower, card.cutDay, currency),
+        SHORTEN: outcome(purchase, shorten, card.cutDay, on, currency),
+        LOWER: outcome(purchase, lower, card.cutDay, on, currency),
       });
     }
   }

@@ -2,7 +2,7 @@ import { Money } from '../money/money';
 import { addDaysUTC } from '../shared/date';
 import { CardPurchase, CardPurchaseProps } from './card-purchase';
 import { Allocation, CardPayment, createCardPayment, ExtraMode } from './card-payment';
-import { cardDebtWithPayments, cardDue, maxPayment, purchaseBalances } from './card-due';
+import { cardCommitmentsWithPayments, cardDebtWithPayments, cardDue, maxPayment, purchaseBalances } from './card-due';
 import { CreditCard, CreditCardProps } from './credit-card';
 import { firstDueDateFor } from './installments';
 import { allocatePayment, paymentPreview } from './payment-allocation';
@@ -138,7 +138,7 @@ describe('allocatePayment: límites', () => {
     const max = maxPayment(feeCard, [p1, p2], [], on);
     const allocations = allocate(feeCard, [p1, p2], [], on, max.amount);
     const payment = createCardPayment({ id: 'x', cardId: 'c1', seq: 1, paidOn: on, fromAccountId: 'a1', total: max, allocations, extraMode: 'SHORTEN', transactionIds: [] });
-    expect(cardDebtWithPayments([p1, p2], [payment]).amount).toBe(0n);
+    expect(cardDebtWithPayments([feeCard], [p1, p2], [payment]).amount).toBe(0n);
     expect(cardDue(feeCard, [p1, p2], [payment], on)).toEqual([]);
     expect(maxPayment(feeCard, [p1, p2], [payment], on).amount).toBe(0n);
   });
@@ -268,6 +268,11 @@ describe('propiedades del reparto (simulación con generador fijo)', () => {
           const extra = payments.flatMap((x) => x.allocations).reduce((a, x) => (x.kind === 'EXTRA' && x.purchaseId === p.id ? a + x.capital.amount : a), 0n);
           expect(paid + extra <= p.amount.amount).toBe(true);
         }
+        // Deuda y compromisos se calculan con el corte de la tarjeta sin fallar y cuadran con el estado.
+        const pending = purchaseBalances(c, purchases, payments, day).reduce((a, b) => a + b.pendingCapital.amount, 0n);
+        expect(cardDebtWithPayments([c], purchases, payments).amount).toBe(pending);
+        const commitments = cardCommitmentsWithPayments([c], purchases, payments, day, addDaysUTC(day, 3000));
+        expect(commitments.every((x) => x.amount.isPositive())).toBe(true);
         steps++;
       }
     }

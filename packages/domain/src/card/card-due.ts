@@ -112,7 +112,7 @@ export function cardDue(card: CreditCard, purchases: readonly CardPurchase[], pa
     overdue: fee.dueDate.getTime() < today,
   }));
   const open = openPurchases(card.id, purchases);
-  for (const purchase of open) items.push(...installmentItems(purchase, purchaseSchedule(purchase, own, card.cutDay), today, until.getTime()));
+  for (const purchase of open) items.push(...installmentItems(purchase, purchaseSchedule(purchase, own, card.cutDay, on), today, until.getTime()));
   return items.sort(compareDue(new Map(open.map((p) => [p.id, p.purchaseDate.getTime()]))));
 }
 
@@ -128,7 +128,7 @@ export function purchaseBalances(
   const until = nextPaymentDate(on, card.dueDay).getTime();
   return openPurchases(card.id, purchases).map((purchase) => {
     const currency = purchase.amount.currency;
-    const schedule = purchaseSchedule(purchase, own, card.cutDay);
+    const schedule = purchaseSchedule(purchase, own, card.cutDay, on);
     const pending = pendingCapitalOf(schedule);
     const inDue = installmentItems(purchase, schedule, today, until)
       .filter((i) => i.kind === 'CAPITAL')
@@ -145,12 +145,18 @@ export function maxPayment(card: CreditCard, purchases: readonly CardPurchase[],
 }
 
 /** Deuda real de las tarjetas: capital pendiente con los pagos aplicados. Sin pagos es igual a `cardDebt`. */
-export function cardDebtWithPayments(purchases: readonly CardPurchase[], payments: readonly CardPayment[], currency = 'COP'): Money {
-  // El capital no depende del corte: solo el interés lo usa.
+export function cardDebtWithPayments(
+  cards: readonly CreditCard[],
+  purchases: readonly CardPurchase[],
+  payments: readonly CardPayment[],
+  currency = 'COP',
+): Money {
+  // El corte cambia el interés de cada cuota y con él la validación de lo pagado: siempre el de la tarjeta.
+  const cutDays = new Map(cards.map((c) => [c.id, c.cutDay]));
   return Money.sum(
     purchases
       .filter((p) => !p.isClosed)
-      .map((p) => Money.of(pendingCapitalOf(purchaseSchedule(p, payments.filter((x) => x.cardId === p.cardId))), p.amount.currency)),
+      .map((p) => Money.of(pendingCapitalOf(purchaseSchedule(p, payments.filter((x) => x.cardId === p.cardId), cutDays.get(p.cardId))), p.amount.currency)),
     purchases[0]?.amount.currency ?? currency,
   );
 }
@@ -175,7 +181,7 @@ export function cardCommitmentsWithPayments(
   for (const purchase of purchases) {
     const card = cardsById.get(purchase.cardId);
     if (!card || purchase.isClosed) continue;
-    const schedule = purchaseSchedule(purchase, cardPayments(card, payments), card.cutDay);
+    const schedule = purchaseSchedule(purchase, cardPayments(card, payments), card.cutDay, from);
     const last = schedule[schedule.length - 1]?.number ?? purchase.installments;
     for (const row of schedule) {
       if (row.dueDate.getTime() > toTime || row.remaining.isZero()) continue;

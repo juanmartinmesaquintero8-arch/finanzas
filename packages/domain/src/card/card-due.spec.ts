@@ -127,6 +127,19 @@ describe('cardDue', () => {
   });
 });
 
+describe('R3: desde el primer pago de la tarjeta, lo no pagado cuenta en el interés', () => {
+  const other = make({ id: 'p2', amount: 100_000, installments: 1, monthlyRatePpm: 0, purchaseDate: d('2026-01-05') });
+  const first = pay(1, d('2026-02-10'), [inst(1, 0, 100_000, 'p2')]);
+  const interest2 = (pays: CardPayment[]) =>
+    cardDue(card(), [make(), other], pays, d('2026-03-01')).find((i) => i.purchaseId === 'p1' && i.number === 2 && i.kind === 'INTEREST')!.amount.amount;
+
+  it('sin eventos, como hoy (22.000); con un evento y sin pagar la cuota 1, 24.000; pagando 60.000, 23.280', () => {
+    expect(interest2([])).toBe(22_000n);
+    expect(interest2([first])).toBe(24_000n);
+    expect(interest2([first, pay(2, d('2026-02-10'), [inst(1, 24_000, 36_000)])])).toBe(23_280n);
+  });
+});
+
 describe('maxPayment', () => {
   it('lo vencido y del periodo más el capital pendiente: igual que liquidar hoy', () => {
     const p1 = pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000)]);
@@ -142,14 +155,29 @@ describe('maxPayment', () => {
 describe('cardDebtWithPayments', () => {
   it('sin pagos es igual a cardDebt', () => {
     const ps = [make(), make({ id: 'p2', paidInstallments: 5 }), make({ id: 'p3', paidInstallments: 2 }).close(d('2026-05-01'))];
-    expect(cardDebtWithPayments(ps, []).amount).toBe(cardDebt(ps).amount);
+    expect(cardDebtWithPayments([card()], ps, []).amount).toBe(cardDebt(ps).amount);
   });
   it('resta el capital realmente pagado, también la plata de más', () => {
-    const p1 = pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000), { kind: 'EXTRA', purchaseId: 'p1', capital: cop(10_000) }]);
-    expect(cardDebtWithPayments([make()], [p1]).amount).toBe(1_154_000n);
+    const p1 = pay(1, d('2026-02-15'), [inst(1, 24_000, 100_000), { kind: 'EXTRA', purchaseId: 'p1', capital: cop(10_000) }]);
+    expect(cardDebtWithPayments([card()], [make()], [p1]).amount).toBe(1_090_000n);
+    const partial = pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000)]);
+    expect(cardDebtWithPayments([card()], [make()], [partial]).amount).toBe(1_164_000n);
   });
+  it('usa el corte de la tarjeta (parcial y luego pago completo en una tarjeta con corte)', () => {
+    const cut = card({ dueDay: 5, cutDay: 20 });
+    const purchase = make({ firstDueDate: firstDueDateFor(d('2026-01-10'), 5, 20), dueDayAnchor: 5 });
+    const a = pay(1, d('2026-02-10'), [inst(1, 24_000, 36_000)]);
+    expect(view(cardDue(cut, [purchase], [a], d('2026-02-25')))).toEqual([
+      ['CAPITAL', 'p1', 1, '2026-02-05', 64_000n, true],
+      ['INTEREST', 'p1', 2, '2026-03-05', 23_280n, false],
+      ['CAPITAL', 'p1', 2, '2026-03-05', 100_000n, false],
+    ]);
+    const b = pay(2, d('2026-02-25'), [inst(1, 0, 64_000), inst(2, 23_280, 100_000)]);
+    expect(cardDebtWithPayments([cut], [purchase], [a, b]).amount).toBe(1_000_000n);
+  });
+
   it('sin compras: cero en la moneda dada', () => {
-    expect(cardDebtWithPayments([], []).equals(Money.zero('COP'))).toBe(true);
+    expect(cardDebtWithPayments([], [], []).equals(Money.zero('COP'))).toBe(true);
   });
 });
 

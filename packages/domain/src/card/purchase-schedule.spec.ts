@@ -82,6 +82,9 @@ describe('purchaseSchedule: propiedades frente a buildInstallmentPlan', () => {
         const plan = buildInstallmentPlan(purchase);
         const schedule = purchaseSchedule(purchase, [], cutDay);
         expect(schedule).toHaveLength(N);
+        // Con cualquier fecha de hoy, sin eventos nada cambia.
+        const today = new Date(Date.UTC(2026, Number(next(60n)), 1));
+        expect(purchaseSchedule(purchase, [], cutDay, today).map((x) => x.interestDue.amount)).toEqual(plan.map((x) => x.interest.amount));
         schedule.forEach((s, k) => {
           expect(s.number).toBe(plan[k].number);
           expect(s.dueDate).toEqual(plan[k].dueDate);
@@ -167,9 +170,11 @@ describe('purchaseSchedule: casos', () => {
     expect(s1[0]).toEqual({ number: 1, capitalDue: 100_000n, interestDue: 24_000n, capitalPaid: 36_000n, interestPaid: 24_000n, remaining: 64_000n });
     // Capital debido al corte de la cuota 2 (15 feb): 1.200.000 − 36.000 = 1.164.000; × 2 % = 23.280 (el plan decía 22.000).
     expect(s1[1]).toEqual({ number: 2, capitalDue: 100_000n, interestDue: 23_280n, capitalPaid: 0n, interestPaid: 0n, remaining: 123_280n });
-    // Cuota 3 (corte 15 mar): los 64.000 que faltan siguen; la cuota 2, sin pagos aún, se supone pagada a tiempo.
-    // 1.200.000 − 36.000 − 100.000 = 1.064.000 → 21.280.
-    expect(s1[2].interestDue).toBe(21_280n);
+    // Cuota 3 (corte 15 mar), después del primer pago: lo no pagado cuenta, también la cuota 2 sin pagar.
+    // 1.200.000 − 36.000 = 1.164.000 → 23.280.
+    expect(s1[2].interestDue).toBe(23_280n);
+    // Mirado el 1 de marzo, el corte del 15 de marzo aún no llega: se proyecta pagando lo anterior a tiempo.
+    expect(purchaseSchedule(purchase, [p1], undefined, d('2026-03-01'))[2].interestDue.amount).toBe(20_000n);
 
     // Segundo pago el 1 de marzo: primero cierra lo que faltaba de la cuota 1.
     const p2 = pay(2, d('2026-03-01'), [inst(1, 0, 64_000), inst(2, 23_280, 12_720)]);
@@ -186,13 +191,15 @@ describe('purchaseSchedule: casos', () => {
     const p2 = pay(2, d('2026-03-01'), [inst(1, 0, 64_000), inst(2, 23_280, 12_720)]);
     const p3 = pay(3, d('2026-03-10'), [inst(2, 0, 87_280), extra(412_720)], 'SHORTEN');
     const before = purchaseSchedule(purchase, []);
-    const s = purchaseSchedule(purchase, [p1, p2, p3]);
+    const s = purchaseSchedule(purchase, [p1, p2, p3], undefined, d('2026-03-10'));
     // B = 1.000.000 − 412.720 = 587.280 → ceil(587.280 / 100.000) = 6 cuotas (3 a 8).
     expect(s.map((x) => x.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(s.slice(2).map((x) => x.capitalDue.amount)).toEqual([100_000n, 100_000n, 100_000n, 100_000n, 100_000n, 87_280n]);
     s.forEach((x, k) => expect(x.dueDate).toEqual(before[k].dueDate));
     // Cuota 3: al 15 de marzo se deben 587.280 → 11.745,6 → 11.746.
     expect(s.slice(2).map((x) => x.interestDue.amount)).toEqual([11_746n, 9_746n, 7_746n, 5_746n, 3_746n, 1_746n]);
+    // Sin fecha de hoy no se proyecta: si nada más se paga, cada corte cobra sobre los 587.280.
+    expect(purchaseSchedule(purchase, [p1, p2, p3]).slice(2).every((x) => x.interestDue.amount === 11_746n)).toBe(true);
     // Capital de las cuotas que quedan + plata de más = D.
     expect(s.reduce((a, x) => a + x.capitalDue.amount, 0n) + 412_720n).toBe(1_200_000n);
   });
@@ -202,7 +209,7 @@ describe('purchaseSchedule: casos', () => {
     const p1 = pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000)]);
     const p2 = pay(2, d('2026-03-01'), [inst(1, 0, 64_000), inst(2, 23_280, 12_720)]);
     const p3 = pay(3, d('2026-03-10'), [inst(2, 0, 87_280), extra(412_720)], 'LOWER');
-    const s = purchaseSchedule(purchase, [p1, p2, p3]);
+    const s = purchaseSchedule(purchase, [p1, p2, p3], undefined, d('2026-03-10'));
     expect(s).toHaveLength(12);
     expect(s.slice(2).every((x) => x.capitalDue.amount === 58_728n)).toBe(true);
     expect(s[2].interestDue.amount).toBe(11_746n);
@@ -238,7 +245,7 @@ describe('purchaseSchedule: casos', () => {
     // Al corte del 20 ene se deben 1.000.000 → 20.000.
     expect(s[0].interestDue.amount).toBe(20_000n);
     // El mismo pago después del corte ya no baja la cuota 1.
-    const late = purchaseSchedule(purchase, [pay(1, d('2026-01-21'), [extra(200_000)], 'SHORTEN')], 20);
+    const late = purchaseSchedule(purchase, [pay(1, d('2026-01-21'), [extra(200_000)], 'SHORTEN')], 20, d('2026-01-21'));
     expect(late[0].interestDue.amount).toBe(24_000n);
     expect(late[1].interestDue.amount).toBe(18_000n);
   });
@@ -257,6 +264,32 @@ describe('purchaseSchedule: casos', () => {
     expect(s.every((x) => x.remaining.isZero())).toBe(true);
   });
 
+  it('la plata de más exige que lo anterior esté pagado por completo (M-5)', () => {
+    const purchase = make();
+    // Cuota 1 pagada a medias y plata de más en el mismo pago.
+    expect(() => purchaseSchedule(purchase, [pay(1, d('2026-02-15'), [inst(1, 24_000, 36_000), extra(1_000)], 'SHORTEN')])).toThrow(
+      'Antes de abonar de más hay que pagar lo facturado.',
+    );
+    // Cuota 1 vencida sin pagar y solo plata de más.
+    expect(() => purchaseSchedule(purchase, [pay(1, d('2026-03-01'), [extra(1_000)], 'LOWER')])).toThrow('Antes de abonar de más hay que pagar lo facturado.');
+    // Todo lo anterior pagado: se acepta.
+    expect(() => purchaseSchedule(purchase, [pay(1, d('2026-02-15'), [inst(1, 24_000, 100_000), extra(1_000)], 'SHORTEN')])).not.toThrow();
+  });
+
+  it('R3: lo vencido antes del primer pago de la tarjeta sigue como hoy; desde el primer pago, lo no pagado cuenta', () => {
+    const purchase = make();
+    // Primer evento de la tarjeta el 1 abr, en otra compra. Cortes de las cuotas 2 y 3: 15 feb y 15 mar (antes) → como hoy.
+    const other = pay(1, d('2026-04-01'), [inst(1, 0, 1, 'otra')]);
+    const s = purchaseSchedule(purchase, [other], undefined, d('2026-04-20'));
+    expect(s.slice(0, 3).map((x) => x.interestDue.amount)).toEqual([24_000n, 22_000n, 20_000n]);
+    // Cuota 4 (corte 15 abr, después del primer evento): las cuotas 1 a 3 sin pagar siguen en la base → 24.000.
+    expect(s[3].interestDue.amount).toBe(24_000n);
+    // Sin eventos en la tarjeta todo queda como hoy.
+    expect(purchaseSchedule(purchase, [], undefined, d('2026-04-20')).map((x) => x.interestDue.amount)).toEqual(
+      buildInstallmentPlan(purchase).map((x) => x.interest.amount),
+    );
+  });
+
   it('rechaza asignaciones imposibles', () => {
     const purchase = make({ paidInstallments: 2 });
     expect(() => purchaseSchedule(purchase, [pay(1, d('2026-04-15'), [inst(2, 0, 1)])])).toThrow('La cuota indicada no es válida');
@@ -266,7 +299,8 @@ describe('purchaseSchedule: casos', () => {
     expect(() => purchaseSchedule(purchase, [pay(1, d('2026-04-15'), [inst(3, 20_001, 0)])])).toThrow('El interés pagado supera el de la cuota');
   });
 
-  it('ignora asignaciones de otras compras', () => {
-    expect(purchaseSchedule(make(), [pay(1, d('2026-02-15'), [extra(10, 'otra')], 'SHORTEN')]).map(row)).toEqual(purchaseSchedule(make(), []).map(row));
+  it('ignora pagos de otras tarjetas', () => {
+    const elsewhere = { ...pay(1, d('2026-02-15'), [extra(10, 'otra')], 'SHORTEN'), cardId: 'c9' };
+    expect(purchaseSchedule(make(), [elsewhere]).map(row)).toEqual(purchaseSchedule(make(), []).map(row));
   });
 });

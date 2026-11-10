@@ -13,7 +13,7 @@ describe('shortenCapitals (terminar antes)', () => {
   });
   it('con cuotas distintas recorta desde el final sin subir ninguna', () => {
     expect(shortenCapitals([28n, 25n, 25n, 25n], 80n)).toEqual([28n, 25n, 25n, 2n]);
-    expect(shortenCapitals([26n, 26n, 25n, 25n], 92n)).toEqual([26n, 26n, 25n, 15n]);
+    expect(shortenCapitals([27n, 25n, 25n, 25n], 92n)).toEqual([27n, 25n, 25n, 15n]);
   });
   it('rechaza B mayor que lo que hay o negativo', () => {
     expect(() => shortenCapitals([1n], 2n)).toThrow();
