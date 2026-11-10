@@ -218,6 +218,11 @@ export interface FeeImpact {
   lostCount: number;
   lostAmount: string;
   changedCount: number;
+  /** Cuotas que cambian de fecha sin cambiar de valor (solo al cambiar el corte). */
+  movedCount?: number;
+  /** Cuotas que antes no se veían y aparecerían (solo al cambiar el corte). */
+  newCount?: number;
+  newAmount?: string;
 }
 
 export interface CardInput {

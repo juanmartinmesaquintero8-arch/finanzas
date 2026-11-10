@@ -147,6 +147,13 @@ export function feeImpactText(impact: FeeImpact): string | null {
   const parts: string[] = [];
   if (impact.lostCount > 0) parts.push(`Dejarás de ver ${count(impact.lostCount)} por ${formatMoneyCompact(impact.lostAmount)}.`);
   if (impact.changedCount > 0) parts.push(`Cambiará el valor de ${count(impact.changedCount)} sin pagar.`);
+  const moved = impact.movedCount ?? 0;
+  if (moved > 0) parts.push(`Cambiará la fecha de ${count(moved)} sin pagar.`);
+  const added = impact.newCount ?? 0;
+  if (added > 0) {
+    const by = formatMoneyCompact(impact.newAmount ?? '0');
+    parts.push(added === 1 ? `Aparecerá 1 cuota de manejo nueva por ${by}.` : `Aparecerán ${added} cuotas de manejo nuevas por ${by}.`);
+  }
   return parts.length > 0 ? parts.join(' ') : null;
 }
 

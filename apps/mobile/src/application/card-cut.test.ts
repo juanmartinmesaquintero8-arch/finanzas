@@ -84,6 +84,7 @@ describe('día de corte en el servicio de tarjetas', () => {
       lostCount: 1,
       lostAmount: '18000',
       changedCount: 0,
+      movedCount: 1,
     });
     expect(await s.cards.cardChangeImpact(id, cardInput({ dueDay: 15, cutDay: 10, feeKind: 'FIXED_MONTHLY', feeAmount: '18000' }))).toEqual({ lostCount: 0, lostAmount: '0', changedCount: 0 });
   });

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { validateCardForm, type CardFormValues, type CardsApi } from '../lib/cards';
+import { feeImpactText, validateCardForm, type CardFormValues, type CardsApi } from '../lib/cards';
 import type { Account, CardView, FeeImpact } from '../lib/types';
 import { CardForm } from './CardForm';
 import { CardsScreen } from './CardsScreen';
@@ -158,5 +158,51 @@ describe('PurchaseForm: primera cuota con corte', () => {
     const a = api();
     render(<PurchaseForm cards={[card({ cutDay: 5 })]} today={TODAY} api={a} initialCardId="c1" onDone={vi.fn()} onCancel={vi.fn()} />);
     expect(a.suggestFirstDueDate).toHaveBeenCalledWith(expect.objectContaining({ dueDay: 15, cutDay: 5 }), TODAY);
+  });
+});
+
+describe('CardForm: filtra el día de corte y confirma quitarlo', () => {
+  const setup = (props: Partial<Parameters<typeof CardForm>[0]> = {}) => {
+    const onSubmit = vi.fn().mockResolvedValue({ ok: true });
+    render(<CardForm accounts={accounts} checkRate={() => ({})} onSubmit={onSubmit} onDone={vi.fn()} onCancel={vi.fn()} {...props} />);
+    return { onSubmit };
+  };
+
+  it('solo deja dígitos', async () => {
+    setup();
+    await userEvent.type(screen.getByLabelText('Día de corte'), 'a5');
+    expect(screen.getByLabelText('Día de corte')).toHaveValue('5');
+  });
+
+  it('al vaciar el corte de una tarjeta que lo tenía pide confirmar', async () => {
+    const { onSubmit } = setup({ card: card({ cutDay: 5 }) });
+    await userEvent.clear(screen.getByLabelText('Día de corte'));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByText('Vas a quitar el día de corte. Las próximas cuotas se calcularán solo con el día de pago.')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Volver' }));
+    expect(screen.getByLabelText('Día de corte')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Sí, quitarlo' }));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Visa', dueDay: 15, paymentAccountId: 'bc', feeKind: 'NONE' });
+  });
+
+  it('una tarjeta que nunca tuvo corte se guarda sin preguntar', async () => {
+    const { onSubmit } = setup({ card: card({ cutDay: null }) });
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(onSubmit).toHaveBeenCalled();
+  });
+});
+
+describe('feeImpactText: fechas movidas y cuotas nuevas', () => {
+  const base: FeeImpact = { lostCount: 0, lostAmount: '0', changedCount: 0 };
+  it('con sus singulares', () => {
+    expect(feeImpactText({ ...base, movedCount: 2 })).toBe('Cambiará la fecha de 2 cuotas de manejo sin pagar.');
+    expect(feeImpactText({ ...base, movedCount: 1 })).toBe('Cambiará la fecha de 1 cuota de manejo sin pagar.');
+    expect(feeImpactText({ ...base, newCount: 2, newAmount: '36000' })).toBe('Aparecerán 2 cuotas de manejo nuevas por $36.000.');
+    expect(feeImpactText({ ...base, newCount: 1, newAmount: '18000' })).toBe('Aparecerá 1 cuota de manejo nueva por $18.000.');
+    expect(feeImpactText({ lostCount: 1, lostAmount: '5', changedCount: 0, movedCount: 1, newCount: 1, newAmount: '7' })).toBe(
+      'Dejarás de ver 1 cuota de manejo por $5. Cambiará la fecha de 1 cuota de manejo sin pagar. Aparecerá 1 cuota de manejo nueva por $7.',
+    );
   });
 });

@@ -1,6 +1,6 @@
 import { Money } from '../money/money';
 import { CardPurchase } from './card-purchase';
-import { cardCommitments, cardFeesDue } from './card-commitments';
+import { billingMonthOf, cardCommitments, cardFeesDue } from './card-commitments';
 import { CreditCard, CreditCardProps } from './credit-card';
 
 const cop = (n: number) => Money.of(n, 'COP');
@@ -95,5 +95,20 @@ describe('manejo con día de corte (ciclo de facturación)', () => {
     const c = card({ fee: fixed, dueDay: 25, cutDay: 10, feeStartMonth: '2026-03' });
     const out = cardCommitments([c], [], d('2026-01-01'), d('2026-04-30')).filter((x) => x.kind === 'CARD_FEE');
     expect(out.map((x) => day(x.date))).toEqual(['2026-03-25', '2026-04-25']);
+  });
+});
+
+describe('billingMonthOf', () => {
+  it('sin corte es el mes calendario', () => {
+    expect(billingMonthOf(d('2026-03-28'))).toBe('2026-03');
+    expect(billingMonthOf(d('2026-12-31'), undefined)).toBe('2026-12');
+  });
+
+  it('con corte: el día del corte es de ese mes y el siguiente ya es del ciclo próximo', () => {
+    expect(billingMonthOf(d('2026-03-10'), 10)).toBe('2026-03');
+    expect(billingMonthOf(d('2026-03-11'), 10)).toBe('2026-04');
+    expect(billingMonthOf(d('2026-03-28'), 10)).toBe('2026-04');
+    expect(billingMonthOf(d('2026-12-11'), 10)).toBe('2027-01');
+    expect(billingMonthOf(d('2026-02-28'), 31)).toBe('2026-02');
   });
 });

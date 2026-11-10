@@ -113,3 +113,9 @@ export function cardCommitments(
 
   return out.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
+
+/** Mes (`YYYY-MM`) de facturación al que pertenece una fecha: el calendario sin corte; con corte, el del primer corte en esa fecha o después. */
+export function billingMonthOf(date: Date, cutDay?: number): YearMonth {
+  const day = startOfDayUTC(date);
+  return formatMonth(cutDay === undefined ? monthIndexOf(day) : cycleMonthIndex(day, cutDay));
+}
