@@ -44,7 +44,8 @@ export function firstDueDateFor(purchaseDate: Date, dueDay: number, cutDay?: num
   return dueAfter(cutOnOrAfter(purchaseDate, cutDay), dueDay);
 }
 
-function interestOn(balance: bigint, ppm: number): bigint {
+/** Interés de un mes sobre un saldo: round_half_up(saldo · ppm / 10^6). */
+export function interestOn(balance: bigint, ppm: number): bigint {
   return (balance * BigInt(ppm) + HALF_PPM) / PPM;
 }
 

@@ -3,3 +3,8 @@ export * from './credit-card';
 export * from './card-purchase';
 export * from './installments';
 export * from './card-commitments';
+export * from './card-payment';
+export * from './capital-recalc';
+export * from './purchase-schedule';
+export * from './card-due';
+export * from './payment-allocation';

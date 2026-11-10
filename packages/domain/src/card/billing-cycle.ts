@@ -40,3 +40,10 @@ export function feeDueDate(monthIndex: number, dueDay: number, cutDay?: number):
   if (cutDay === undefined) return inMonthIndex(monthIndex + 1, dueDay);
   return dueAfter(inMonthIndex(monthIndex, cutDay), dueDay);
 }
+
+/** Último corte (día ajustado a fin de mes) estrictamente anterior a `date`. */
+export function cutBefore(date: Date, cutDay: number): Date {
+  const index = monthIndexOf(date);
+  const thisMonth = inMonthIndex(index, cutDay);
+  return thisMonth.getTime() < date.getTime() ? thisMonth : inMonthIndex(index - 1, cutDay);
+}
