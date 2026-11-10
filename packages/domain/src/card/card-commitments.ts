@@ -17,7 +17,7 @@ export interface CardFeeDue {
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 /** '2026-11' -> 'noviembre 2026'. */
-function monthInWords(month: YearMonth): string {
+export function monthInWords(month: YearMonth): string {
   return `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 }
 
