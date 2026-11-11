@@ -437,9 +437,10 @@ function assertCardPayments(
 ): void {
   const purchaseCard = new Map(purchases.map((p) => [p.id, p.cardId]));
   const claimed = new Set<string>();
-  const byCard = new Map<string, CardPayment[]>();
+  const cardsById = new Map(cards.map((c) => [c.id, c]));
+  const byCard = new Map<string, { seqs: Set<number>; payments: CardPayment[] }>();
   for (const p of payments) {
-    const card = cards.find((c) => c.id === p.cardId)!;
+    const card = cardsById.get(p.cardId)!;
     const who = labelOf('cardPayment', card.name);
     if (!accountIds.has(p.fromAccountId)) throw unusable(who, 'se pagó desde una cuenta que no existe en la copia.');
     for (const a of p.allocations) {
@@ -452,19 +453,27 @@ function assertCardPayments(
       if (claimed.has(t)) throw unusable(who, 'comparte un movimiento con otro pago.');
       claimed.add(t);
     }
-    const own = byCard.get(p.cardId) ?? [];
-    if (own.some((o) => o.seq === p.seq)) throw unusable(who, 'tiene el mismo orden que otro pago de esa tarjeta.');
-    own.push(p);
-    byCard.set(p.cardId, own);
+    let own = byCard.get(p.cardId);
+    if (!own) byCard.set(p.cardId, (own = { seqs: new Set(), payments: [] }));
+    if (own.seqs.has(p.seq)) throw unusable(who, 'tiene el mismo orden que otro pago de esa tarjeta.');
+    own.seqs.add(p.seq);
+    own.payments.push(p);
+  }
+  const purchasesByCard = new Map<string, CardPurchase[]>();
+  for (const p of purchases) {
+    const list = purchasesByCard.get(p.cardId);
+    if (list) list.push(p);
+    else purchasesByCard.set(p.cardId, [p]);
   }
   for (const [cardId, own] of byCard) {
-    const card = cards.find((c) => c.id === cardId)!;
+    const card = cardsById.get(cardId)!;
     const who = labelOf('cardPayment', card.name);
-    const sorted = [...own].sort((a, b) => a.seq - b.seq);
+    const sorted = [...own.payments].sort((a, b) => a.seq - b.seq);
     const last = sorted[sorted.length - 1]!.paidOn;
-    const cardPurchases = purchases.filter((p) => p.cardId === cardId);
+    const cardPurchases = purchasesByCard.get(cardId) ?? [];
     checked(who, () => {
-      sorted.forEach((p, i) => validatePaymentDate(p.paidOn, sorted.slice(0, i), last));
+      // Cada fecha contra la del pago anterior: si no retroceden, el último es el más reciente.
+      sorted.forEach((p, i) => validatePaymentDate(p.paidOn, i > 0 ? [sorted[i - 1]!] : [], last));
       // Si los pagos no cuadran con las compras (más capital o interés que el de la cuota, compra cerrada…), el cálculo falla.
       cardDebtWithPayments([card], cardPurchases, sorted);
       cardCommitmentsWithPayments([card], cardPurchases, sorted, last, last);
