@@ -66,6 +66,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   lastPaidFeeMonth: null,
   overdue: '0',
   lastCardPayment: null,
+  payable: true,
   ...over,
 });
 

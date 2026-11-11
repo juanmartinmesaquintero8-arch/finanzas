@@ -216,6 +216,8 @@ export interface CardView {
   overdue: string;
   /** Último pago único a la tarjeta; null si aún no tiene ninguno (siguen los botones del sistema anterior). */
   lastCardPayment: { id: string; total: string; paidOn: string } | null;
+  /** Hoy hay algo que se pueda pagar (el máximo del día es mayor que 0). Un manejo futuro se lista, pero no cuenta. */
+  payable: boolean;
 }
 
 /** Qué cuotas de manejo sin pagar desaparecen o cambian si se hace un cambio. */

@@ -338,6 +338,7 @@ export class CardService {
       lastPaidFeeMonth,
       overdue: Money.sum(overdue.map((i) => i.amount), CURRENCY).amount.toString(),
       lastCardPayment: last ? { id: last.id, total: last.total.amount.toString(), paidOn: isoDay(last.paidOn) } : null,
+      payable: maxPayment(card, own, ownPayments, today, CURRENCY).isPositive(),
     };
   }
 

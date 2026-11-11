@@ -128,7 +128,6 @@ function CreditCardItem({ card, today, api, onPay, onAddPurchase, onEdit, onEdit
   const close = () => setPanel(null);
   // Con el primer pago único, los deshacer del sistema anterior dejan su lugar al de la tarjeta.
   const last = card.lastCardPayment;
-  const payable = BigInt(card.debt) > 0n || card.pendingFees.length > 0;
 
   return (
     <li className={`${ui.card} ${styles.card}`}>
@@ -146,7 +145,7 @@ function CreditCardItem({ card, today, api, onPay, onAddPurchase, onEdit, onEdit
           </button>
         </div>
       )}
-      {payable && (
+      {card.payable && (
         <button type="button" className={ui.button} aria-label={`Pagar tarjeta ${card.name}`} onClick={onPay}>
           Pagar tarjeta
         </button>

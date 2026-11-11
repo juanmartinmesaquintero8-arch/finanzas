@@ -25,7 +25,7 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
 });
 const card = (over: Partial<CardView> = {}): CardView => ({
   id: 'c1', name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'MV', rateText: '2', monthlyRatePpm: 20000, chargesInterest: true, debt: '900000',
-  next: { amount: '118000', date: '2026-12-15' }, purchases: [purchase()], pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }], lastPaidFeeMonth: null, overdue: '0', lastCardPayment: null, ...over,
+  next: { amount: '118000', date: '2026-12-15' }, purchases: [purchase()], pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }], lastPaidFeeMonth: null, overdue: '0', lastCardPayment: null, payable: true, ...over,
 });
 
 function api(over: Partial<CardsApi> = {}): CardsApi {

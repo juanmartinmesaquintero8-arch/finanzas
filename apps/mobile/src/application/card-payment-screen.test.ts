@@ -236,3 +236,18 @@ describe('borrar una compra que recibió plata de un pago nuevo', () => {
     expect((await cardView()).lastCardPayment).toBeNull();
   });
 });
+
+describe('se puede pagar la tarjeta', () => {
+  it('solo un manejo que vence después de la próxima fecha de pago: no hay nada que pagar todavía', async () => {
+    // Hoy 10 de marzo, día de pago 15: el manejo de marzo vence el 15 de abril.
+    await s.cards.createCard({ name: 'Visa', dueDay: 15, paymentAccountId: accountId, feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'MV', rateText: '2' });
+    const card = await cardView();
+    expect(card.pendingFees.map((f) => f.dueDate)).toEqual(['2026-04-15']);
+    expect(card.payable).toBe(false);
+  });
+
+  it('con deuda sí se puede pagar', async () => {
+    await setup();
+    expect((await cardView()).payable).toBe(true);
+  });
+});

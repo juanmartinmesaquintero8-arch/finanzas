@@ -52,6 +52,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   lastPaidFeeMonth: '2026-09',
   overdue: '0',
   lastCardPayment: null,
+  payable: true,
   ...over,
 });
 
@@ -185,8 +186,19 @@ describe('la tarjeta en la lista', () => {
   });
 
   it('sin deuda ni manejo no ofrece pagar', () => {
-    setup([card({ debt: '0', purchases: [], pendingFees: [], next: null })]);
+    setup([card({ debt: '0', purchases: [], pendingFees: [], next: null, payable: false })]);
     expect(screen.queryByRole('button', { name: /^Pagar tarjeta/ })).toBeNull();
+  });
+
+  it('solo un manejo futuro (después de la próxima fecha de pago): lo lista, pero no ofrece pagar', () => {
+    setup([card({ debt: '0', purchases: [], next: null, pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }], payable: false })]);
+    expect(screen.getByText('Manejo Visa Bancolombia (noviembre 2026)')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Pagar tarjeta/ })).toBeNull();
+  });
+
+  it('con algo por pagar ofrece «Pagar tarjeta»', () => {
+    setup([card({ payable: true })]);
+    expect(screen.getByRole('button', { name: 'Pagar tarjeta Visa Bancolombia' })).toBeInTheDocument();
   });
 });
 
