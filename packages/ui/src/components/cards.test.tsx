@@ -41,6 +41,8 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   monthlyRatePpm: 20000,
   closedOn: null,
   dueDayAnchor: 15,
+  paidCount: 3,
+  installmentCount: 12,
   next: installment(4, '2026-12-15', '118000', '100000', '18000'),
   settle: { capital: '900000', interest: '18000', total: '918000' },
   ...over,
@@ -63,6 +65,8 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   purchases: [purchase()],
   pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }],
   lastPaidFeeMonth: null,
+  overdue: '0',
+  lastCardPayment: null,
   ...over,
 });
 

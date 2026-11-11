@@ -178,6 +178,9 @@ export interface PurchaseView {
   dueDayAnchor: number | null;
   /** La cuota por pagar; null si está liquidada o pagada por completo. */
   next: InstallmentView | null;
+  /** Cuotas ya pagadas por completo y cuotas que tiene hoy (terminar antes las reduce). */
+  paidCount: number;
+  installmentCount: number;
   /** Lo que costaría liquidarla hoy; null si ya no se debe nada. */
   settle: { capital: string; interest: string; total: string } | null;
 }
@@ -211,6 +214,10 @@ export interface CardView {
   pendingFees: PendingFeeView[];
   /** Último mes de manejo con pago real ('YYYY-MM'); null si no hay ninguno. */
   lastPaidFeeMonth: string | null;
+  /** Lo vencido hoy (cuotas y manejo sin pagar con fecha anterior a hoy). */
+  overdue: string;
+  /** Último pago único a la tarjeta; null si aún no tiene ninguno (siguen los botones del sistema anterior). */
+  lastCardPayment: { id: string; total: string; paidOn: string } | null;
 }
 
 /** Qué cuotas de manejo sin pagar desaparecen o cambian si se hace un cambio. */
@@ -285,12 +292,16 @@ export interface CardPaymentPreviewInput {
 /** Pago único a la tarjeta. `paymentId` se crea al abrir el formulario: repetirlo no registra el pago dos veces. */
 export interface CardPaymentInput extends CardPaymentPreviewInput {
   paymentId: string;
+  /** Firma del desglose que se mostró: si el reparto ya no es el mismo, no se guarda nada. */
+  expected?: string;
 }
 
 /** Cómo quedaría una compra con la plata de más. */
 export interface CardPaymentOutcomeView {
   remainingInstallments: number;
   nextInstallment: string;
+  /** Vencimiento de la última cuota que quedaría ('YYYY-MM-DD'); null si no queda ninguna. */
+  endDate: string | null;
 }
 
 /** Desglose de un pago único antes de confirmarlo. */
@@ -304,7 +315,17 @@ export interface CardPaymentPreview {
   /** Hay plata de más: hay que elegir terminar antes o bajar la cuota. */
   needsMode: boolean;
   outcomes: { purchaseId: string; SHORTEN: CardPaymentOutcomeView; LOWER: CardPaymentOutcomeView }[];
+  /** Lo vencido que queda sin pagar después de este pago. */
+  pending: string;
+  /** Compra que recibe primero la plata de más; null si no hay plata de más. */
+  extraPurchaseId: string | null;
+  /** Compras que pueden recibir plata de más, en el orden sugerido (primero la de mayor interés). */
+  extraTargets: { purchaseId: string; description: string }[];
+  /** Firma del reparto, para confirmar exactamente este desglose. */
+  signature: string;
 }
+
+export type CardPaymentShortcuts = { ok: true; thisMonth: string; max: string } | { ok: false; error: string };
 
 export type CardPaymentPreviewResult = { ok: true; preview: CardPaymentPreview } | { ok: false; error: string };
 
