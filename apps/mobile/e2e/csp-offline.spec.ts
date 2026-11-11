@@ -192,7 +192,7 @@ test('tarjetas: crea tarjeta y compra, paga parcial, paga con plata de más y de
   await page.getByLabel('¿Cuánto pagaste?').fill('100000');
   await page.getByRole('button', { name: 'Continuar' }).click();
   await expect(page.getByRole('heading', { name: 'Así se reparte tu pago de $100.000' })).toBeVisible();
-  await expect(page.getByText('Queda pendiente $24.000. Lo que falte sigue vencido y el interés del próximo mes sube un poco.')).toBeVisible();
+  await expect(page.getByText('Queda vencido $24.000. Sigue vencido y el interés del próximo mes sube un poco.')).toBeVisible();
   await page.getByRole('button', { name: 'Sí, registrar el pago' }).click();
   await expect(page.getByText('Pago registrado.')).toBeVisible();
   await expect(card.getByText('Vencido $24.000')).toBeVisible();
