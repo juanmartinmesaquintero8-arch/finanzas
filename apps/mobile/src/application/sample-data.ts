@@ -68,7 +68,7 @@ export function generateSampleData(now: Date): LedgerSnapshot {
     dueDayAnchor: card.dueDay,
   });
 
-  return { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards: [card], cardPurchases: [purchase] };
+  return { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards: [card], cardPurchases: [purchase], cardPayments: [] };
 }
 
 export const isSampleId = (id: string): boolean => id.startsWith(SAMPLE_PREFIX);

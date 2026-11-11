@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Actualización real v1 -> v2 en un navegador de verdad. Se siembra la base con el esquema v1 LITERAL
+ * Actualización real v1 -> v3 (directa) en un navegador de verdad. Se siembra la base con el esquema v1 LITERAL
  * (el del celular del dueño) usando `indexedDB` crudo, antes de que exista la app en esa página.
  */
 const NOTICE = 'Cierra las otras ventanas de Mis Finanzas para terminar de actualizar la app. Tus datos están a salvo.';
@@ -91,23 +91,24 @@ async function inspect(page: Page) {
   );
 }
 
-const ALL_V2 = ['accounts', 'cardPurchases', 'creditCards', 'meta', 'scheduledExpenses', 'scheduledIncomes', 'transactions'];
+const ALL_V3 = ['accounts', 'cardPayments', 'cardPurchases', 'creditCards', 'meta', 'scheduledExpenses', 'scheduledIncomes', 'transactions'];
 
 async function expectIntact(page: Page): Promise<void> {
   const info = await inspect(page);
-  expect(info.version).toBe(2);
-  expect(info.stores).toEqual(ALL_V2);
-  expect(info.counts).toMatchObject({ accounts: 2, transactions: 2, scheduledExpenses: 1, meta: 1, scheduledIncomes: 0, creditCards: 0, cardPurchases: 0 });
+  expect(info.version).toBe(3);
+  expect(info.stores).toEqual(ALL_V3);
+  expect(info.counts).toMatchObject({ accounts: 2, transactions: 2, scheduledExpenses: 1, meta: 1, scheduledIncomes: 0, creditCards: 0, cardPurchases: 0, cardPayments: 0 });
   expect(info.indexes['transactions']).toEqual(['by-account-date', 'by-date']);
   expect(info.indexes['scheduledExpenses']).toEqual(['by-account']);
   expect(info.indexes['scheduledIncomes']).toEqual(['by-account']);
   expect(info.indexes['cardPurchases']).toEqual(['by-card']);
+  expect(info.indexes['cardPayments']).toEqual(['by-card']);
 }
 
 // Con datos, la pantalla principal es «Inicio» (el saludo «Mis Finanzas» es del estado vacío).
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Inicio' });
 
-test('una base v1 real se actualiza a v2 sin perder datos y sin errores', async ({ browser, baseURL }) => {
+test('una base v1 real se actualiza a v3 sin perder datos y sin errores', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
   const errors: string[] = [];

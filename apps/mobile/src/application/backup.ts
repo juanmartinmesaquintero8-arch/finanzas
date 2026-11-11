@@ -427,7 +427,7 @@ export function parseBackup(text: string): ParsedBackup {
 
     return {
       ok: true,
-      snapshot: { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards, cardPurchases },
+      snapshot: { accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards, cardPurchases, cardPayments: [] },
       summary: {
         accounts: accounts.length,
         transactions: transactions.length,
