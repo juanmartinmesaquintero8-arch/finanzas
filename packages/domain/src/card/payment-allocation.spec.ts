@@ -186,6 +186,16 @@ describe('paymentPreview', () => {
     expect(o.SHORTEN.nextInstallment.amount).toBe(111_746n);
     expect(o.LOWER.remainingInstallments).toBe(10);
     expect(o.LOWER.nextInstallment.amount).toBe(70_474n);
+    // La última cuota que quedaría: terminar antes acorta el plan; bajar la cuota lo deja igual.
+    expect(o.SHORTEN.lastDueDate).toEqual(d('2026-09-15'));
+    expect(o.LOWER.lastDueDate).toEqual(d('2027-01-15'));
+  });
+
+  it('si la plata de más cierra la compra no queda última cuota', () => {
+    const all = maxPayment(card(), [p1], [], on);
+    const [o] = paymentPreview(card(), [p1], [], on, all).outcomes;
+    expect(o.SHORTEN).toEqual({ remainingInstallments: 0, nextInstallment: cop(0), lastDueDate: null });
+    expect(o.LOWER).toEqual({ remainingInstallments: 0, nextInstallment: cop(0), lastDueDate: null });
   });
 
   it('sin plata de más no hay opciones; el manejo va aparte', () => {
