@@ -127,7 +127,7 @@ describe('cardDue', () => {
   });
 });
 
-describe('R3: desde el primer pago de la tarjeta, lo no pagado cuenta en el interés', () => {
+describe('desde el primer pago de la tarjeta, lo no pagado cuenta en el interés', () => {
   const other = make({ id: 'p2', amount: 100_000, installments: 1, monthlyRatePpm: 0, purchaseDate: d('2026-01-05') });
   const first = pay(1, d('2026-02-10'), [inst(1, 0, 100_000, 'p2')]);
   const interest2 = (pays: CardPayment[]) =>
@@ -174,6 +174,10 @@ describe('cardDebtWithPayments', () => {
     ]);
     const b = pay(2, d('2026-02-25'), [inst(1, 0, 64_000), inst(2, 23_280, 100_000)]);
     expect(cardDebtWithPayments([cut], [purchase], [a, b]).amount).toBe(1_000_000n);
+  });
+
+  it('rechaza una compra cuya tarjeta no está en la lista', () => {
+    expect(() => cardDebtWithPayments([], [make()], [])).toThrow('La compra «Compra» es de una tarjeta que no está en la lista.');
   });
 
   it('sin compras: cero en la moneda dada', () => {

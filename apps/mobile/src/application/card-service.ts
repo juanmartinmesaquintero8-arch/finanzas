@@ -6,8 +6,14 @@ import {
   TransactionFactory,
   UnknownAccountError,
   buildInstallmentPlan,
-  cardDebt,
   billingMonthOf,
+  cardDebtWithPayments,
+  createCardPayment,
+  maxPayment,
+  paymentPreview,
+  validatePaymentDate,
+  type CardPayment,
+  type PaymentPreview,
   cardFeesDue,
   firstDueDateFor,
   isMonthKey,
@@ -27,6 +33,10 @@ import {
   todayISO,
   type ActionResult,
   type CardInput,
+  type CardPaymentInput,
+  type CardPaymentPreview,
+  type CardPaymentPreviewInput,
+  type CardPaymentPreviewResult,
   type CardView,
   type FeeImpact,
   type PayFeeInput,
@@ -40,8 +50,9 @@ import {
   type InstallmentView,
   type SettleInput,
 } from '@finanzas/ui';
+import { LegacyLockedError } from '@/data/idb-ledger-store';
 import { latestFeeMonths } from './card-payment-id';
-import { INT64_MAX, MAX_CARD_PURCHASES, MAX_CREDIT_CARDS, MAX_TEXT } from './limits';
+import { INT64_MAX, MAX_CARD_ID, MAX_CARD_PAYMENTS, MAX_CARD_PURCHASES, MAX_CREDIT_CARDS, MAX_TEXT } from './limits';
 import { AppError, CURRENCY, assertTextLength, isoDay, notFound, parseDay, parseMoney, toMessage, writeAction, type ServiceContext } from './support';
 
 /** Categoría de los gastos que no son capital: intereses y cuotas de manejo. */
@@ -57,6 +68,22 @@ type AgreedTerms = Pick<PurchaseView, 'monthlyRatePpm' | 'purchaseDate' | 'first
 
 const NO_FEE_IMPACT: FeeImpact = { lostCount: 0, lostAmount: '0', changedCount: 0 };
 const LATE_PURCHASE = 'Esa compra es de un mes con manejo ya pagado, así que no se generó una cuota nueva.';
+
+/** Los pagos y deshacer por compra o por manejo no se mezclan con el pago único de la tarjeta. */
+const LEGACY_LOCKED = 'Esta tarjeta ya usa el pago único. Para corregir, usa «Deshacer último pago de la tarjeta».';
+const BAD_PAYMENT_ID = 'No pudimos registrar el pago. Cierra el formulario y ábrelo de nuevo.';
+const CARD_CHANGED = 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.';
+const NOTHING_TO_UNDO = 'Esta tarjeta no tiene pagos para deshacer.';
+const CUT_LOCKED = 'Esta tarjeta ya tiene pagos con el pago único. Para cambiar el día de corte, primero deshazlos con «Deshacer último pago de la tarjeta».';
+/** El id del pago lo crea el cliente; con él, `pt-<id>-<nn>` siempre cabe en un id válido de movimiento. */
+const PAYMENT_ID = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_CARD_ID}}$`);
+const LOCKED_PURCHASE = 'Esta compra ya tiene cuotas pagadas: solo puedes cambiar la descripción y la categoría.';
+
+/** ¿Algún pago de tarjeta reparte plata a esta compra? */
+const touchesPurchase = (payments: readonly CardPayment[], purchaseId: string): boolean =>
+  payments.some((p) => p.allocations.some((a) => a.kind !== 'FEE' && a.purchaseId === purchaseId));
+
+const lastSeqOf = (payments: readonly CardPayment[]): number => payments.reduce((max, p) => Math.max(max, p.seq), 0);
 
 /** Con el año entre 2000 y 2100 la fecha se guarda y se recupera siempre igual. */
 function parseCardDate(raw: string): Date {
@@ -210,13 +237,18 @@ export class CardService {
   constructor(private readonly ctx: ServiceContext) {}
 
   async list(): Promise<CardView[]> {
-    const [cards, purchases, feeIds] = await Promise.all([this.ctx.cards.findAll(), this.ctx.purchases.findAll(), this.ctx.ledger.feePaymentIds()]);
+    const [cards, purchases, feeIds, payments] = await Promise.all([
+      this.ctx.cards.findAll(),
+      this.ctx.purchases.findAll(),
+      this.ctx.ledger.feePaymentIds(),
+      this.ctx.cardPayments.findAll(),
+    ]);
     const horizon = feeHorizon(todayISO(this.ctx.now()));
     const lastPaid = latestFeeMonths(feeIds);
-    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, horizon, lastPaid.get(card.id) ?? null));
+    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, payments, horizon, lastPaid.get(card.id) ?? null));
   }
 
-  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], horizon: Date, lastPaidFeeMonth: string | null): CardView {
+  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], horizon: Date, lastPaidFeeMonth: string | null): CardView {
     const own = purchases.filter((p) => p.cardId === card.id);
     const views = own.map(toPurchaseView).sort(byPendingFirst);
     return {
@@ -231,7 +263,7 @@ export class CardService {
       rateText: card.rate ? formatRate(card.rate.ppm) : null,
       monthlyRatePpm: card.rate?.monthlyPpm ?? 0,
       chargesInterest: !!card.rate,
-      debt: cardDebt(own, CURRENCY).amount.toString(),
+      debt: cardDebtWithPayments([card], own, payments, CURRENCY).amount.toString(),
       next: nextDue(views),
       purchases: views,
       pendingFees: cardFeesDue(card, purchases, BEGINNING, horizon).map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: f.amount.amount.toString() })),
@@ -239,10 +271,10 @@ export class CardService {
     };
   }
 
-  /** Para Inicio: capital pendiente en todas las tarjetas. Es informativo: no se resta del Saldo Real. */
+  /** Para Inicio: capital pendiente en todas las tarjetas, con los pagos aplicados. Es informativo: no se resta del Saldo Real. */
   async debtSummary(): Promise<{ hasCards: boolean; debt: string }> {
-    const [cards, purchases] = await Promise.all([this.ctx.cards.findAll(), this.ctx.purchases.findAll()]);
-    return { hasCards: cards.length > 0, debt: cardDebt(purchases, CURRENCY).amount.toString() };
+    const [cards, purchases, payments] = await Promise.all([this.ctx.cards.findAll(), this.ctx.purchases.findAll(), this.ctx.cardPayments.findAll()]);
+    return { hasCards: cards.length > 0, debt: cardDebtWithPayments(cards, purchases, payments, CURRENCY).amount.toString() };
   }
 
   /** Revisa la tasa mientras se escribe: lo que la bloquea y lo que solo merece una advertencia. */
@@ -370,12 +402,14 @@ export class CardService {
       const existing = await this.requireCard(id);
       const feeStart = nextFeeStart(existing, feeOf(input), this.currentMonth(input.cutDay));
       const card = this.buildCard(id, input, feeStart, existing.feesSettledThrough);
+      // El corte fija el interés de cada cuota: cambiarlo descuadraría lo ya repartido en los pagos únicos.
+      if (card.cutDay !== existing.cutDay && (await this.ctx.cardPayments.countByCard(id)) > 0) throw new AppError(CUT_LOCKED);
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
     });
   }
 
-  /** Borra la tarjeta y sus compras; los pagos reales quedan en el historial. */
+  /** Borra la tarjeta, sus compras y sus pagos únicos; los movimientos reales quedan en el historial. */
   removeCard(id: string): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       await this.requireCard(id);
@@ -401,7 +435,8 @@ export class CardService {
     return writeAction(this.ctx, async () => {
       const existing = await this.requirePurchase(id);
       if (input.cardId !== existing.cardId) throw new AppError('Una compra no se puede pasar a otra tarjeta.');
-      if (existing.paidInstallments > 0 || existing.isClosed) {
+      const paid = existing.paidInstallments > 0 || existing.isClosed || touchesPurchase(await this.ctx.cardPayments.findByCard(existing.cardId), id);
+      if (paid) {
         this.assertLockedFieldsUnchanged(existing, input);
         assertTextLength('description', input.description);
         assertTextLength('category', input.category);
@@ -428,6 +463,7 @@ export class CardService {
   payInstallment(purchaseId: string, input: PayInstallmentInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const purchase = await this.requirePurchase(purchaseId);
+      await this.assertLegacyAllowed(purchase.cardId);
       if (purchase.isClosed) throw new AppError('Esta compra ya está liquidada.');
       if (purchase.paidInstallments >= purchase.installments) {
         if (input.installment !== undefined && input.installment <= purchase.paidInstallments) return;
@@ -451,7 +487,7 @@ export class CardService {
         interest,
         interestDescription: fitDescription(`Intereses ${purchase.description}`, suffix),
       });
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.markPaid(number), put);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.markPaid(number), put));
     });
   }
 
@@ -459,11 +495,12 @@ export class CardService {
   undoLastPayment(purchaseId: string, input: { installment?: number } = {}): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const purchase = await this.requirePurchase(purchaseId);
+      await this.assertLegacyAllowed(purchase.cardId);
       if (purchase.isClosed) throw new AppError('Esta compra ya está liquidada, así que no se puede deshacer el pago.');
       if (input.installment !== undefined && input.installment !== purchase.paidInstallments) return; // Segundo toque.
       if (purchase.paidInstallments === 0) throw new AppError('Esta compra no tiene pagos para deshacer.');
       const number = purchase.paidInstallments;
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.undoLastPayment(), [], [`cp-${purchase.id}-${number}`, `ci-${purchase.id}-${number}`]);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.undoLastPayment(), [], [`cp-${purchase.id}-${number}`, `ci-${purchase.id}-${number}`]));
     });
   }
 
@@ -471,6 +508,7 @@ export class CardService {
   settle(purchaseId: string, input: SettleInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const purchase = await this.requirePurchase(purchaseId);
+      await this.assertLegacyAllowed(purchase.cardId);
       if (purchase.isClosed) throw new AppError('Esta compra ya está liquidada.');
       if (purchase.paidInstallments >= purchase.installments) throw new AppError('Esta compra ya está pagada.');
       const paidOn = parseCardDate(input.paidOn);
@@ -484,7 +522,7 @@ export class CardService {
         interest: offer.interest,
         interestDescription: fitDescription(`Intereses liquidación ${purchase.description}`, ''),
       });
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.close(paidOn), put);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.close(paidOn), put));
     });
   }
 
@@ -492,6 +530,7 @@ export class CardService {
   payFee(cardId: string, month: string, input: PayFeeInput): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const card = await this.requireCard(cardId);
+      await this.assertLegacyAllowed(card.id);
       const notPending = new AppError('Esa cuota de manejo no está pendiente.');
       if (!isMonthKey(month) || card.fee.kind === 'NONE') throw notPending;
       if (card.feesSettledThrough !== undefined && month <= card.feesSettledThrough) return; // Segundo toque.
@@ -513,7 +552,7 @@ export class CardService {
         description: fitDescription(`Manejo ${card.name}`, ` (${formatMonthLong(month)})`),
         category: INTEREST_CATEGORY,
       });
-      await this.ctx.ledger.writeFeePayment(card, CreditCard.create({ ...card.toProps(), feesSettledThrough: month }), payment);
+      await this.legacyWrite(() => this.ctx.ledger.writeFeePayment(card, CreditCard.create({ ...card.toProps(), feesSettledThrough: month }), payment));
     });
   }
 
@@ -525,13 +564,148 @@ export class CardService {
   undoLastFee(cardId: string, input: { month?: string } = {}): Promise<ActionResult> {
     return writeAction(this.ctx, async () => {
       const card = await this.requireCard(cardId);
+      await this.assertLegacyAllowed(card.id);
       const latest = latestFeeMonths(await this.ctx.ledger.feePaymentIds()).get(card.id);
       if (input.month !== undefined && input.month !== latest) return; // Segundo toque.
       if (latest === undefined) throw new AppError('Esta tarjeta no tiene pagos de manejo para deshacer.');
       const previous = previousMonth(latest);
       const feesSettledThrough = previous >= card.feeStartMonth ? previous : undefined;
-      await this.ctx.ledger.writeFeeUndo(card, CreditCard.create({ ...card.toProps(), feesSettledThrough }), `cf-${card.id}-${latest}`);
+      await this.legacyWrite(() => this.ctx.ledger.writeFeeUndo(card, CreditCard.create({ ...card.toProps(), feesSettledThrough }), `cf-${card.id}-${latest}`));
     });
+  }
+
+  /** Desglose de un pago único a la tarjeta, al día del pago (calendario de Colombia). No escribe nada. */
+  async previewCardPayment(cardId: string, input: CardPaymentPreviewInput): Promise<CardPaymentPreviewResult> {
+    try {
+      const card = await this.requireCard(cardId);
+      const [purchases, payments] = await this.cardState(card.id);
+      const { amount, paidOn, preview } = this.planPayment(card, purchases, payments, input);
+      const names = new Map(purchases.map((p) => [p.id, p.description]));
+      const view: CardPaymentPreview = {
+        total: amount.amount.toString(),
+        max: maxPayment(card, purchases, payments, paidOn, CURRENCY).amount.toString(),
+        fees: preview.fees.map((f) => ({ month: f.month, amount: f.amount.amount.toString() })),
+        purchases: preview.purchases.map((p) => ({
+          purchaseId: p.purchaseId,
+          description: names.get(p.purchaseId) ?? '',
+          interest: p.interest.amount.toString(),
+          capital: p.capital.amount.toString(),
+          extraCapital: p.extraCapital.amount.toString(),
+        })),
+        extraCapital: preview.extraCapital.amount.toString(),
+        needsMode: preview.extraCapital.isPositive(),
+        outcomes: preview.outcomes.map((o) => ({
+          purchaseId: o.purchaseId,
+          SHORTEN: { remainingInstallments: o.SHORTEN.remainingInstallments, nextInstallment: o.SHORTEN.nextInstallment.amount.toString() },
+          LOWER: { remainingInstallments: o.LOWER.remainingInstallments, nextInstallment: o.LOWER.nextInstallment.amount.toString() },
+        })),
+      };
+      return { ok: true, preview: view };
+    } catch (e) {
+      return { ok: false, error: toMessage(e) };
+    }
+  }
+
+  /**
+   * Pago único a la tarjeta: reparte el valor (lo vencido, lo del periodo y la plata de más) y guarda el pago
+   * con sus movimientos en una sola escritura. Repetir el mismo `paymentId` no registra nada más.
+   */
+  payCard(cardId: string, input: CardPaymentInput): Promise<ActionResult> {
+    return writeAction(this.ctx, async () => {
+      const card = await this.requireCard(cardId);
+      if (typeof input.paymentId !== 'string' || !PAYMENT_ID.test(input.paymentId)) throw new AppError(BAD_PAYMENT_ID);
+      if (await this.ctx.cardPayments.findById(input.paymentId)) return; // Segundo toque.
+      if ((await this.ctx.cardPayments.count()) >= MAX_CARD_PAYMENTS) {
+        throw new AppError(`Llegaste al máximo de ${MAX_CARD_PAYMENTS.toLocaleString('es-CO')} pagos de tarjeta.`);
+      }
+      const [purchases, payments] = await this.cardState(card.id);
+      const { amount, paidOn, preview } = this.planPayment(card, purchases, payments, input);
+      await this.assertAccount(input.fromAccountId);
+      const movements = this.cardPaymentMovements(card, purchases, preview, input.paymentId, input.fromAccountId, paidOn);
+      const lastSeq = lastSeqOf(payments);
+      const payment = createCardPayment({
+        id: input.paymentId,
+        cardId: card.id,
+        seq: lastSeq + 1,
+        paidOn,
+        fromAccountId: input.fromAccountId,
+        total: amount,
+        extraMode: input.mode,
+        allocations: preview.allocations,
+        transactionIds: movements.map((t) => t.id),
+      });
+      if ((await this.ctx.ledger.writeCardPaymentEvent(lastSeq, payment, movements, purchases)) === 'changed') throw new AppError(CARD_CHANGED);
+    });
+  }
+
+  /** Quita el último pago único de la tarjeta y sus movimientos, en una sola escritura. */
+  undoLastCardPayment(cardId: string, input: { paymentId?: string } = {}): Promise<ActionResult> {
+    return writeAction(this.ctx, async () => {
+      const card = await this.requireCard(cardId);
+      const payments = await this.ctx.cardPayments.findByCard(card.id);
+      const last = payments[payments.length - 1];
+      if (input.paymentId !== undefined && input.paymentId !== last?.id) return; // Segundo toque.
+      if (!last) throw new AppError(NOTHING_TO_UNDO);
+      if (!(await this.ctx.ledger.removeCardPaymentEvent(last))) throw new AppError(CARD_CHANGED);
+    });
+  }
+
+  private cardState(cardId: string): Promise<[CardPurchase[], CardPayment[]]> {
+    return Promise.all([this.ctx.purchases.findByCard(cardId), this.ctx.cardPayments.findByCard(cardId)]);
+  }
+
+  /** Valida monto y fecha (día calendario de Colombia) y reparte el pago al día en que se hizo. */
+  private planPayment(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], input: CardPaymentPreviewInput) {
+    const amount = parseMoney(input.amount);
+    const paidOn = parseCardDate(input.paidOn);
+    validatePaymentDate(paidOn, payments, parseDay(todayISO(this.ctx.now())));
+    const preview = paymentPreview(card, purchases, payments, paidOn, amount, { extraPurchaseId: input.extraPurchaseId });
+    return { amount, paidOn, preview };
+  }
+
+  /**
+   * Movimientos de un pago único: por cada compra, el capital (con su categoría) y el interés; luego cada
+   * cuota de manejo. Los de valor cero no se crean. Ids `pt-<pago>-<nn>` en ese orden.
+   */
+  private cardPaymentMovements(card: CreditCard, purchases: readonly CardPurchase[], preview: PaymentPreview, paymentId: string, accountId: string, date: Date): Transaction[] {
+    const byId = new Map(purchases.map((p) => [p.id, p]));
+    const parts: { amount: Money; description: string; category?: string }[] = [];
+    for (const p of preview.purchases) {
+      const purchase = byId.get(p.purchaseId)!;
+      parts.push({ amount: p.capital.add(p.extraCapital), description: fitDescription(purchase.description, ' (pago de tarjeta)'), category: purchase.category });
+      parts.push({ amount: p.interest, description: fitDescription(`Intereses ${purchase.description}`, ''), category: INTEREST_CATEGORY });
+    }
+    for (const fee of preview.fees) {
+      parts.push({ amount: fee.amount, description: fitDescription(`Manejo ${card.name}`, ` (${formatMonthLong(fee.month)})`), category: INTEREST_CATEGORY });
+    }
+    return parts
+      .filter((part) => part.amount.isPositive())
+      .map((part, i) =>
+        TransactionFactory.create({
+          id: `pt-${paymentId}-${String(i + 1).padStart(2, '0')}`,
+          type: 'EXPENSE',
+          accountId,
+          amount: part.amount,
+          date,
+          description: part.description,
+          category: part.category,
+        }),
+      );
+  }
+
+  /** Los pagos y deshacer del sistema anterior solo valen mientras la tarjeta no tenga pagos únicos. */
+  private async assertLegacyAllowed(cardId: string): Promise<void> {
+    if ((await this.ctx.cardPayments.countByCard(cardId)) > 0) throw new AppError(LEGACY_LOCKED);
+  }
+
+  /** Escritura del sistema anterior: si al guardar resulta que la tarjeta ya tiene pagos únicos, se avisa. */
+  private async legacyWrite(write: () => Promise<unknown>): Promise<void> {
+    try {
+      await write();
+    } catch (e) {
+      if (e instanceof LegacyLockedError) throw new AppError(LEGACY_LOCKED);
+      throw e;
+    }
   }
 
   private buildCard(id: string, input: CardInput, feeStartMonth: string, feesSettledThrough?: string): CreditCard {
@@ -581,7 +755,7 @@ export class CardService {
       sameDates &&
       (input.paidInstallments === undefined || input.paidInstallments === existing.paidInstallments) &&
       (input.withoutInterest === undefined || input.withoutInterest === (existing.monthlyRatePpm === 0));
-    if (!unchanged) throw new AppError('Esta compra ya tiene cuotas pagadas: solo puedes cambiar la descripción y la categoría.');
+    if (!unchanged) throw new AppError(LOCKED_PURCHASE);
   }
 
   private termsOf(card: CreditCard): CardTerms {

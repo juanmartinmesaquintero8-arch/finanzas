@@ -1,4 +1,5 @@
 import { Account } from '../account/account';
+import { CardPayment } from '../card/card-payment';
 import { CardPurchase } from '../card/card-purchase';
 import { CreditCard } from '../card/credit-card';
 import { ScheduledExpense } from '../scheduled/scheduled-expense';
@@ -75,6 +76,19 @@ export interface CardPurchaseRepository {
   findByCard(cardId: string): Promise<CardPurchase[]>;
   save(purchase: CardPurchase): Promise<void>;
   delete(id: string): Promise<void>;
+}
+
+/**
+ * Pagos de tarjeta (eventos): solo lectura. Se escriben y se deshacen junto con sus movimientos,
+ * en una sola operación del almacenamiento, nunca por separado.
+ */
+export interface CardPaymentRepository {
+  findAll(): Promise<CardPayment[]>;
+  findById(id: string): Promise<CardPayment | null>;
+  /** Los pagos de la tarjeta en orden (`seq` ascendente). */
+  findByCard(cardId: string): Promise<CardPayment[]>;
+  count(): Promise<number>;
+  countByCard(cardId: string): Promise<number>;
 }
 
 export const ACCOUNT_REPOSITORY = Symbol('AccountRepository');

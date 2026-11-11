@@ -82,15 +82,17 @@ function applyExtra(rows: Row[], extra: bigint, mode: ExtraMode | undefined, due
  * - Las `paidInstallments` heredadas cuentan como pagadas, con capital e interés del plan.
  * - Interés de la cuota k = round_half_up(O_k · ppm / 10^6), con O_k = D − capital pagado hasta su corte
  *   (pagos con fecha ≤ corte), fijado cuando el corte pasa.
- * - Regla del dueño (2026-11-10, "como el banco, desde ahora"): si el corte es anterior al primer pago (evento)
- *   de la tarjeta, las cuotas anteriores sin pagos registrados se suponen pagadas a tiempo, como hoy; desde el
- *   primer evento, todo el capital no pagado cuenta en O_k. Una tarjeta sin eventos queda exactamente como hoy.
+ * - Como el banco, desde el primer pago nuevo: si el corte es anterior al primer pago (evento) de la tarjeta,
+ *   las cuotas anteriores sin pagos registrados se suponen pagadas a tiempo, como hoy; desde el primer evento,
+ *   todo el capital no pagado cuenta en O_k. Una tarjeta sin eventos queda exactamente como hoy.
  * - `on` (hoy, día calendario de Colombia): las cuotas cuyo corte es hoy o después, y aún no fijadas por un pago
  *   posterior, se proyectan suponiendo que lo anterior se paga a tiempo. Sin `on` no se proyecta.
  * - Plata de más: recálculo SHORTEN o LOWER de las cuotas que siguen, en orden de `seq`; las fechas no cambian.
  * Sin pagos, o pagando cada cuota completa en su fecha, es idéntico a `buildInstallmentPlan`.
+ * Uso interno del paquete (no se exporta): fuera de él se usa `purchaseSchedule`, que exige `on`.
+ * Sin `on` solo sirve para el capital, que no depende de la proyección.
  */
-export function purchaseSchedule(
+export function computeSchedule(
   purchase: CardPurchase,
   payments: readonly CardPayment[],
   cutDay?: number,
@@ -189,4 +191,19 @@ export function purchaseSchedule(
     });
   });
   return out;
+}
+
+/**
+ * Cuotas de una compra con los pagos aplicados, al día `on` (hoy, día calendario de Colombia como fecha UTC
+ * a medianoche). `on` es obligatorio: sin él, los intereses de las cuotas aún sin corte no se proyectan.
+ * Las reglas están en `computeSchedule`.
+ */
+export function purchaseSchedule(
+  purchase: CardPurchase,
+  payments: readonly CardPayment[],
+  cutDay: number | undefined,
+  on: Date,
+): ScheduledInstallment[] {
+  assertDomain(on instanceof Date && !Number.isNaN(on.getTime()), 'Falta el día de hoy para calcular las cuotas');
+  return computeSchedule(purchase, payments, cutDay, on);
 }

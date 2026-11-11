@@ -269,6 +269,45 @@ export interface PayFeeInput {
   amount?: string;
 }
 
+/** Qué hacer con la plata de más: terminar antes (misma cuota) o bajar la cuota (mismas cuotas). */
+export type ExtraMode = 'SHORTEN' | 'LOWER';
+
+/** Datos de un pago único a la tarjeta, para el desglose. Montos en pesos enteros como texto. */
+export interface CardPaymentPreviewInput {
+  amount: string;
+  paidOn: string;
+  fromAccountId: string;
+  mode?: ExtraMode;
+  /** Compra que recibe primero la plata de más; si no se da, la de mayor tasa. */
+  extraPurchaseId?: string;
+}
+
+/** Pago único a la tarjeta. `paymentId` se crea al abrir el formulario: repetirlo no registra el pago dos veces. */
+export interface CardPaymentInput extends CardPaymentPreviewInput {
+  paymentId: string;
+}
+
+/** Cómo quedaría una compra con la plata de más. */
+export interface CardPaymentOutcomeView {
+  remainingInstallments: number;
+  nextInstallment: string;
+}
+
+/** Desglose de un pago único antes de confirmarlo. */
+export interface CardPaymentPreview {
+  total: string;
+  /** Lo más que se puede pagar ese día. */
+  max: string;
+  fees: { month: string; amount: string }[];
+  purchases: { purchaseId: string; description: string; interest: string; capital: string; extraCapital: string }[];
+  extraCapital: string;
+  /** Hay plata de más: hay que elegir terminar antes o bajar la cuota. */
+  needsMode: boolean;
+  outcomes: { purchaseId: string; SHORTEN: CardPaymentOutcomeView; LOWER: CardPaymentOutcomeView }[];
+}
+
+export type CardPaymentPreviewResult = { ok: true; preview: CardPaymentPreview } | { ok: false; error: string };
+
 /** Lo que se confirma antes de guardar una compra. */
 export interface PurchasePreview {
   totalCount: number;

@@ -2,7 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 
 export const DB_NAME = 'mis-finanzas';
 /** La versión nunca debe bajar: un navegador con la base en v2 se negaría a abrir una v1. */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /** Filas tal como se guardan en IndexedDB: los montos son string de bigint, las fechas ISO. */
 export interface StoredAccount {
@@ -81,6 +81,28 @@ export interface StoredCardPurchase {
   dueDayAnchor?: number | null;
 }
 
+/** Una parte de un pago de tarjeta, con los montos como string de bigint. */
+export type StoredAllocation =
+  | { kind: 'INSTALLMENT'; purchaseId: string; number: number; interest: string; capital: string }
+  | { kind: 'EXTRA'; purchaseId: string; capital: string }
+  | { kind: 'FEE'; month: string; amount: string };
+
+/** Pago a una tarjeta (evento) con su reparto. */
+export interface StoredCardPayment {
+  id: string;
+  cardId: string;
+  /** Orden del pago dentro de la tarjeta, desde 1. */
+  seq: number;
+  /** ISO 8601 completo del día del pago (medianoche UTC). */
+  paidOn: string;
+  fromAccountId: string;
+  total: string;
+  currency: string;
+  extraMode: 'SHORTEN' | 'LOWER' | null;
+  allocations: StoredAllocation[];
+  transactionIds: string[];
+}
+
 export interface FinanzasSchema extends DBSchema {
   accounts: { key: string; value: StoredAccount };
   transactions: {
@@ -103,6 +125,11 @@ export interface FinanzasSchema extends DBSchema {
     key: string;
     value: StoredCardPurchase;
     indexes: { 'by-card': string };
+  };
+  cardPayments: {
+    key: string;
+    value: StoredCardPayment;
+    indexes: { 'by-card': [string, number] };
   };
   meta: { key: string; value: { key: string; value: unknown } };
 }
@@ -139,6 +166,10 @@ export function openFinanzasDb(name: string = DB_NAME, hooks: OpenHooks = {}): P
         db.createObjectStore('scheduledIncomes', { keyPath: 'id' }).createIndex('by-account', 'accountId');
         db.createObjectStore('creditCards', { keyPath: 'id' });
         db.createObjectStore('cardPurchases', { keyPath: 'id' }).createIndex('by-card', 'cardId');
+      }
+      if (oldVersion < 3) {
+        // Pagos de tarjeta por tarjeta y orden; el índice único impide dos pagos con el mismo orden.
+        db.createObjectStore('cardPayments', { keyPath: 'id' }).createIndex('by-card', ['cardId', 'seq'], { unique: true });
       }
     },
     blocked() {

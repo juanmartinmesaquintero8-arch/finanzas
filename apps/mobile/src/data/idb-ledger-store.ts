@@ -1,19 +1,23 @@
-import type { Account, CardPurchase, CreditCard, ScheduledExpense, ScheduledIncome, Transaction } from '@finanzas/domain';
+import type { Account, CardPayment, CardPurchase, CreditCard, ScheduledExpense, ScheduledIncome, Transaction } from '@finanzas/domain';
 import type { IDBPTransaction, StoreNames } from 'idb';
 import type {
   FinanzasDb,
   FinanzasSchema,
+  StoredCardPayment,
   StoredCardPurchase,
   StoredCreditCard,
   StoredTransaction,
 } from './database';
+import { cardPaymentRange } from './idb-card.repository';
 import {
   toAccount,
+  toCardPayment,
   toCardPurchase,
   toCreditCard,
   toIncome,
   toScheduled,
   toStoredAccount,
+  toStoredCardPayment,
   toStoredCardPurchase,
   toStoredCreditCard,
   toStoredIncome,
@@ -29,21 +33,29 @@ export interface LedgerSnapshot {
   scheduledIncomes: ScheduledIncome[];
   creditCards: CreditCard[];
   cardPurchases: CardPurchase[];
+  cardPayments: CardPayment[];
 }
 
+type CardStore = 'creditCards' | 'cardPurchases' | 'cardPayments';
+
 /** Lo que se reescribe en `replaceAll`: las tarjetas pueden venir aparte, como filas, en `extras`. */
-export type LedgerWrite = Omit<LedgerSnapshot, 'creditCards' | 'cardPurchases'> & Partial<Pick<LedgerSnapshot, 'creditCards' | 'cardPurchases'>>;
+export type LedgerWrite = Omit<LedgerSnapshot, CardStore> & Partial<Pick<LedgerSnapshot, CardStore>>;
 
 /** Filas de los almacenes de tarjetas, tal como se guardan. */
 export interface ExtraRows {
   creditCards: StoredCreditCard[];
   cardPurchases: StoredCardPurchase[];
+  cardPayments: StoredCardPayment[];
 }
+
+/** Resultado de guardar un pago de tarjeta: guardado, ya estaba (doble toque) o la tarjeta cambió entretanto. */
+export type CardPaymentWrite = 'written' | 'already' | 'changed';
 
 /** Filas por lectura al recorrer el historial para las gráficas. */
 const SCAN_BATCH = 5000;
 
-const DATA_STORES = ['accounts', 'transactions', 'scheduledExpenses', 'scheduledIncomes', 'creditCards', 'cardPurchases'] as const;
+const CARD_STORES = ['creditCards', 'cardPurchases', 'cardPayments'] as const;
+const DATA_STORES = ['accounts', 'transactions', 'scheduledExpenses', 'scheduledIncomes', ...CARD_STORES] as const;
 
 type WriteTx = IDBPTransaction<FinanzasSchema, StoreNames<FinanzasSchema>[], 'readwrite'>;
 type Track = (request: Promise<unknown>) => void;
@@ -78,6 +90,32 @@ async function atomically(
   }
 }
 
+/** ¿Las compras guardadas son las mismas con las que se calculó el reparto (mismas, con las mismas cuotas pagadas y cierre)? */
+function samePurchases(expected: readonly CardPurchase[], rows: readonly StoredCardPurchase[]): boolean {
+  if (expected.length !== rows.length) return false;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return expected.every((p) => {
+    const row = byId.get(p.id);
+    return !!row && row.paidInstallments === p.paidInstallments && !!row.closedOn === p.isClosed && (row.closedOn ? row.closedOn === p.closedOn?.toISOString() : true);
+  });
+}
+
+/**
+ * Un pago o deshacer del sistema anterior no se guardó porque la tarjeta ya tiene pagos únicos
+ * (se detecta dentro de la misma escritura). No es lo mismo que "ya estaba hecho": hay que avisar.
+ */
+export class LegacyLockedError extends Error {
+  constructor() {
+    super('La tarjeta ya usa el pago único.');
+    this.name = 'LegacyLockedError';
+  }
+}
+
+/** Dentro de una transacción: ¿la tarjeta ya tiene algún pago único? (los pagos del sistema anterior ya no se mezclan). */
+async function hasCardPayments(tx: WriteTx, cardId: string): Promise<boolean> {
+  return (await tx.objectStore('cardPayments').index('by-card').count(cardPaymentRange(cardId))) > 0;
+}
+
 /**
  * Operaciones que tocan varias tablas a la vez: liquidar un gasto programado,
  * restaurar o borrar todo. Cada una es todo o nada.
@@ -104,15 +142,16 @@ export class IdbLedgerStore {
   /**
    * Pago de tarjeta (cuota, deshacer o liquidar) en una sola escritura: guarda los movimientos, borra los
    * indicados y actualiza la compra. Dentro de la misma transacción comprueba que la compra siga como se
-   * leyó: si otro toque ya la cambió, no escribe nada y devuelve false.
+   * leyó y que la tarjeta no tenga pagos únicos: si no, no escribe nada y devuelve false.
    */
   async writeCardPayment(before: CardPurchase, after: CardPurchase, put: readonly Transaction[], remove: readonly string[] = []): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'cardPurchases'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'cardPurchases', 'cardPayments'], (tx, track) => {
       const purchases = tx.objectStore('cardPurchases');
       const transactions = tx.objectStore('transactions');
       track(
-        purchases.get(before.id).then((row) => {
+        Promise.all([purchases.get(before.id), hasCardPayments(tx, before.cardId)]).then(([row, locked]) => {
+          if (locked) throw new LegacyLockedError();
           if (!row || row.paidInstallments !== before.paidInstallments || !!row.closedOn !== before.isClosed) return;
           for (const t of put) track(transactions.put(toStoredTransaction(t)));
           for (const id of remove) track(transactions.delete(id));
@@ -124,13 +163,14 @@ export class IdbLedgerStore {
     return applied;
   }
 
-  /** Pago de cuota de manejo: guarda el gasto y el mes pagado juntos; si la tarjeta ya cambió, no escribe nada. */
+  /** Pago de cuota de manejo: guarda el gasto y el mes pagado juntos; si la tarjeta cambió o ya tiene pagos únicos, no escribe nada. */
   async writeFeePayment(before: CreditCard, after: CreditCard, payment: Transaction): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'creditCards'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'creditCards', 'cardPayments'], (tx, track) => {
       const cards = tx.objectStore('creditCards');
       track(
-        cards.get(before.id).then((row) => {
+        Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
+          if (locked) throw new LegacyLockedError();
           if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').put(toStoredTransaction(payment)));
           track(cards.put(toStoredCreditCard(after)));
@@ -141,16 +181,71 @@ export class IdbLedgerStore {
     return applied;
   }
 
-  /** Deshace un pago de manejo: borra el gasto y retrocede el mes pagado juntos; si la tarjeta ya cambió, no escribe nada. */
+  /** Deshace un pago de manejo: borra el gasto y retrocede el mes pagado juntos; si la tarjeta cambió o ya tiene pagos únicos, no escribe nada. */
   async writeFeeUndo(before: CreditCard, after: CreditCard, paymentId: string): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'creditCards'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'creditCards', 'cardPayments'], (tx, track) => {
       const cards = tx.objectStore('creditCards');
       track(
-        cards.get(before.id).then((row) => {
+        Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
+          if (locked) throw new LegacyLockedError();
           if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').delete(paymentId));
           track(cards.put(toStoredCreditCard(after)));
+          applied = true;
+        }),
+      );
+    });
+    return applied;
+  }
+
+  /**
+   * Pago único de una tarjeta: guarda el evento y sus movimientos en una sola transacción. Dentro de ella:
+   * si ya existe un pago con ese id no escribe nada ("already", un doble toque); si el último orden de la
+   * tarjeta no es `expectedLastSeq` (otro pago o un deshacer se cruzó), tampoco ("changed"). Tampoco si la
+   * tarjeta ya no existe o sus compras (cuáles son, cuotas pagadas, liquidadas) no son las `purchases` con
+   * las que se repartió el pago.
+   */
+  async writeCardPaymentEvent(
+    expectedLastSeq: number,
+    payment: CardPayment,
+    transactions: readonly Transaction[],
+    purchases: readonly CardPurchase[],
+  ): Promise<CardPaymentWrite> {
+    if (payment.seq !== expectedLastSeq + 1) throw new Error('El orden del pago no sigue al último de la tarjeta.');
+    let result: CardPaymentWrite = 'changed';
+    await atomically(this.db, ['transactions', 'cardPayments', 'creditCards', 'cardPurchases'], (tx, track) => {
+      const payments = tx.objectStore('cardPayments');
+      const lastOfCard = payments.index('by-card').openCursor(cardPaymentRange(payment.cardId), 'prev');
+      const card = tx.objectStore('creditCards').getKey(payment.cardId);
+      const rows = tx.objectStore('cardPurchases').index('by-card').getAll(payment.cardId);
+      track(
+        Promise.all([payments.getKey(payment.id), lastOfCard, card, rows]).then(([existing, last, cardKey, current]) => {
+          if (existing !== undefined) {
+            result = 'already';
+            return;
+          }
+          if ((last?.value.seq ?? 0) !== expectedLastSeq || cardKey === undefined || !samePurchases(purchases, current)) return;
+          // `add` (no `put`): si un movimiento ya existiera, falla y se cancela todo.
+          for (const t of transactions) track(tx.objectStore('transactions').add(toStoredTransaction(t)));
+          track(payments.add(toStoredCardPayment(payment)));
+          result = 'written';
+        }),
+      );
+    });
+    return result;
+  }
+
+  /** Deshace un pago de tarjeta (evento y movimientos) en una sola transacción, solo si es el último de su tarjeta. */
+  async removeCardPaymentEvent(payment: CardPayment): Promise<boolean> {
+    let applied = false;
+    await atomically(this.db, ['transactions', 'cardPayments'], (tx, track) => {
+      const payments = tx.objectStore('cardPayments');
+      track(
+        payments.index('by-card').openCursor(cardPaymentRange(payment.cardId), 'prev').then((last) => {
+          if (!last || last.value.id !== payment.id) return;
+          for (const id of last.value.transactionIds) track(tx.objectStore('transactions').delete(id));
+          track(payments.delete(payment.id));
           applied = true;
         }),
       );
@@ -163,28 +258,35 @@ export class IdbLedgerStore {
     return this.db.getAllKeys('transactions', IDBKeyRange.bound('cf-', 'cf-\uffff'));
   }
 
-  /** Borra la tarjeta y sus compras, todo o nada. Los movimientos reales se conservan. */
+  /** Borra la tarjeta, sus compras y sus pagos (eventos), todo o nada. Los movimientos reales se conservan. */
   deleteCard(cardId: string): Promise<void> {
-    return atomically(this.db, ['creditCards', 'cardPurchases'], (tx, track) => {
+    return atomically(this.db, [...CARD_STORES], (tx, track) => {
       const purchases = tx.objectStore('cardPurchases');
+      const payments = tx.objectStore('cardPayments');
       track(tx.objectStore('creditCards').delete(cardId));
       track(
         purchases.index('by-card').getAllKeys(cardId).then((keys) => {
           for (const key of keys) track(purchases.delete(key));
         }),
       );
+      track(
+        payments.index('by-card').getAllKeys(cardPaymentRange(cardId)).then((keys) => {
+          for (const key of keys) track(payments.delete(key));
+        }),
+      );
     });
   }
 
   async readAll(): Promise<LedgerSnapshot> {
-    const tx = this.db.transaction(['accounts', 'transactions', 'scheduledExpenses', 'scheduledIncomes', 'creditCards', 'cardPurchases'], 'readonly');
-    const [accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards, cardPurchases] = await Promise.all([
+    const tx = this.db.transaction([...DATA_STORES], 'readonly');
+    const [accounts, transactions, scheduledExpenses, scheduledIncomes, creditCards, cardPurchases, cardPayments] = await Promise.all([
       tx.objectStore('accounts').getAll(),
       tx.objectStore('transactions').getAll(),
       tx.objectStore('scheduledExpenses').getAll(),
       tx.objectStore('scheduledIncomes').getAll(),
       tx.objectStore('creditCards').getAll(),
       tx.objectStore('cardPurchases').getAll(),
+      tx.objectStore('cardPayments').getAll(),
       tx.done,
     ]);
     return {
@@ -194,6 +296,7 @@ export class IdbLedgerStore {
       scheduledIncomes: scheduledIncomes.map(toIncome),
       creditCards: creditCards.map(toCreditCard),
       cardPurchases: cardPurchases.map(toCardPurchase),
+      cardPayments: cardPayments.map(toCardPayment),
     };
   }
 
@@ -229,20 +332,22 @@ export class IdbLedgerStore {
     }
   }
 
-  /** Lee las filas de los almacenes de tarjetas (para conservarlas al reescribir el resto). */
+  /** Lee las filas de los almacenes de tarjetas, compras y pagos de tarjeta (para conservarlas al reescribir el resto). */
   async readExtras(): Promise<ExtraRows> {
-    const tx = this.db.transaction(['creditCards', 'cardPurchases'], 'readonly');
-    const [creditCards, cardPurchases] = await Promise.all([
+    const tx = this.db.transaction([...CARD_STORES], 'readonly');
+    const [creditCards, cardPurchases, cardPayments] = await Promise.all([
       tx.objectStore('creditCards').getAll(),
       tx.objectStore('cardPurchases').getAll(),
+      tx.objectStore('cardPayments').getAll(),
       tx.done,
     ]);
-    return { creditCards, cardPurchases };
+    return { creditCards, cardPurchases, cardPayments };
   }
 
   /**
    * Reemplaza todos los datos por los recibidos (restaurar copia), en una sola transacción.
-   * Las tarjetas y compras quedan con las de `snapshot` o las filas de `extras`; sin ninguna (copia que no las trae), vacías.
+   * Las tarjetas, compras y pagos de tarjeta quedan con los de `snapshot` o las filas de `extras`;
+   * sin ninguno (copia que no los trae), vacíos.
    */
   replaceAll(snapshot: LedgerWrite, extras: Partial<ExtraRows> = {}): Promise<void> {
     return atomically(this.db, [...DATA_STORES], (tx, track) => {
@@ -254,12 +359,13 @@ export class IdbLedgerStore {
       track(transactions.clear());
       track(scheduled.clear());
       track(incomes.clear());
-      for (const store of ['creditCards', 'cardPurchases'] as const) {
+      for (const store of CARD_STORES) {
         track(tx.objectStore(store).clear());
         for (const row of extras[store] ?? []) track(tx.objectStore(store).put(row as never));
       }
       for (const c of snapshot.creditCards ?? []) track(tx.objectStore('creditCards').put(toStoredCreditCard(c)));
       for (const p of snapshot.cardPurchases ?? []) track(tx.objectStore('cardPurchases').put(toStoredCardPurchase(p)));
+      for (const p of snapshot.cardPayments ?? []) track(tx.objectStore('cardPayments').put(toStoredCardPayment(p)));
       for (const a of snapshot.accounts) track(accounts.put(toStoredAccount(a)));
       for (const t of snapshot.transactions) track(transactions.put(toStoredTransaction(t)));
       for (const s of snapshot.scheduledExpenses) track(scheduled.put(toStoredScheduled(s)));
@@ -267,7 +373,7 @@ export class IdbLedgerStore {
     });
   }
 
-  /** Borra todos los datos (cuentas, movimientos, programados, tarjetas y compras). Conserva los ajustes (meta). */
+  /** Borra todos los datos (cuentas, movimientos, programados, tarjetas, compras y pagos de tarjeta). Conserva los ajustes (meta). */
   clearAll(): Promise<void> {
     return this.replaceAll({ accounts: [], transactions: [], scheduledExpenses: [], scheduledIncomes: [] });
   }

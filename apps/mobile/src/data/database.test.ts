@@ -53,23 +53,23 @@ async function createV1(dbName: string) {
   db.close();
 }
 
-const openV2 = async (n = name) => {
+const openCurrent = async (n = name) => {
   const db = await openFinanzasDb(n);
   open.push(db);
   return db;
 };
 
-describe('actualización v1 -> v2', () => {
-  it('DB_VERSION es 2', () => {
-    expect(DB_VERSION).toBe(2);
+describe('actualización v1 -> v3 (directa)', () => {
+  it('DB_VERSION es 3', () => {
+    expect(DB_VERSION).toBe(3);
   });
 
   it('conserva intactos los datos reales de una base v1 y deja los almacenes nuevos vacíos', async () => {
     await createV1(name);
-    const db = await openV2();
-    expect(db.version).toBe(2);
+    const db = await openCurrent();
+    expect(db.version).toBe(3);
     expect([...db.objectStoreNames].sort()).toEqual(
-      ['accounts', 'cardPurchases', 'creditCards', 'meta', 'scheduledExpenses', 'scheduledIncomes', 'transactions'],
+      ['accounts', 'cardPayments', 'cardPurchases', 'creditCards', 'meta', 'scheduledExpenses', 'scheduledIncomes', 'transactions'],
     );
     expect((await db.getAll('accounts')).map((a) => a.id).sort()).toEqual(['a1', 'a2']);
     expect((await db.get('accounts', 'a1'))?.initialBalance).toBe('1500000');
@@ -79,11 +79,12 @@ describe('actualización v1 -> v2', () => {
     expect(await db.getAll('scheduledIncomes')).toEqual([]);
     expect(await db.getAll('creditCards')).toEqual([]);
     expect(await db.getAll('cardPurchases')).toEqual([]);
+    expect(await db.getAll('cardPayments')).toEqual([]);
   });
 
   it('los índices antiguos siguen funcionando', async () => {
     await createV1(name);
-    const db = await openV2();
+    const db = await openCurrent();
     expect((await db.getAllFromIndex('transactions', 'by-date')).map((t) => t.id)).toEqual(['t1', 't2']);
     const byAccount = await db.getAllFromIndex('transactions', 'by-account-date', IDBKeyRange.bound('a2|', 'a2|￿'));
     expect(byAccount.map((t) => t.id)).toEqual(['t2']);
@@ -92,7 +93,7 @@ describe('actualización v1 -> v2', () => {
 
   it('los almacenes nuevos son utilizables y tienen sus índices', async () => {
     await createV1(name);
-    const db = await openV2();
+    const db = await openCurrent();
     const income = { id: 'i1', description: 'Nómina', amount: '2000000', currency: 'COP', accountId: 'a1', frequency: 'MONTHLY', startDate: '2026-04-30', endDate: null, settledThrough: null };
     await db.put('scheduledIncomes', income);
     expect(await db.getAllFromIndex('scheduledIncomes', 'by-account', 'a1')).toEqual([income]);
@@ -106,7 +107,7 @@ describe('actualización v1 -> v2', () => {
 
   it('los repositorios y readAll siguen igual tras actualizar', async () => {
     await createV1(name);
-    const db = await openV2();
+    const db = await openCurrent();
     const accounts = new IdbAccountRepository(db);
     const txs = new IdbTransactionRepository(db);
     const sched = new IdbScheduledExpenseRepository(db);
@@ -116,22 +117,23 @@ describe('actualización v1 -> v2', () => {
     await txs.save(TransactionFactory.create({ type: 'EXPENSE', id: 't3', accountId: 'a3', amount: cop(1), date: new Date('2026-03-03T00:00:00Z'), description: 'x' }));
     await sched.save(ScheduledExpense.create({ id: 's2', description: 'Luz', amount: cop(100), accountId: 'a3', frequency: 'MONTHLY', startDate: new Date('2026-05-01T00:00:00Z') }));
     const snap = await ledger.readAll();
-    expect(Object.keys(snap).sort()).toEqual(['accounts', 'cardPurchases', 'creditCards', 'scheduledExpenses', 'scheduledIncomes', 'transactions']);
+    expect(Object.keys(snap).sort()).toEqual(['accounts', 'cardPayments', 'cardPurchases', 'creditCards', 'scheduledExpenses', 'scheduledIncomes', 'transactions']);
     expect(snap.accounts.map((a) => a.id).sort()).toEqual(['a1', 'a2', 'a3']);
     expect(snap.transactions.map((t) => t.id).sort()).toEqual(['t1', 't2', 't3']);
     expect(snap.scheduledExpenses.map((s) => s.id).sort()).toEqual(['s1', 's2']);
   });
 
-  it('una base nueva desde cero tiene todo, y reabrir v2 no cambia nada', async () => {
-    const first = await openV2();
-    expect([...first.objectStoreNames]).toHaveLength(7);
+  it('una base nueva desde cero tiene todo, y reabrir v3 no cambia nada', async () => {
+    const first = await openCurrent();
+    expect([...first.objectStoreNames]).toHaveLength(8);
+    expect([...first.transaction('cardPayments').store.indexNames]).toEqual(['by-card']);
     expect([...first.transaction('cardPurchases').store.indexNames]).toEqual(['by-card']);
     await first.put('accounts', { id: 'z', name: 'Z', type: 'CASH', initialBalance: '1', currency: 'COP' });
     await first.put('creditCards', { id: 'c', name: 'V', dueDay: 1, paymentAccountId: 'z', feeKind: 'NONE', feeAmount: null, currency: 'COP', rateBasis: null, ratePpm: null, feeStartMonth: '2026-01', feesSettledThrough: null });
     first.close();
     open.pop();
-    const again = await openV2();
-    expect(again.version).toBe(2);
+    const again = await openCurrent();
+    expect(again.version).toBe(3);
     expect((await again.getAll('accounts')).map((a) => a.id)).toEqual(['z']);
     expect((await again.getAll('creditCards')).map((c) => c.id)).toEqual(['c']);
   });
@@ -146,13 +148,73 @@ describe('otras pestañas abiertas', () => {
     old.close();
     const db = await pending;
     open.push(db);
-    expect(db.version).toBe(2);
+    expect(db.version).toBe(3);
   });
 
   it('cierra su conexión cuando otra pestaña pide actualizar (blocking)', async () => {
-    const db = await openV2();
-    const next = await openDB(name, 3, { blocked: () => { throw new Error('quedó bloqueada'); } });
+    const db = await openCurrent();
+    const next = await openDB(name, 4, { blocked: () => { throw new Error('quedó bloqueada'); } });
     next.close();
     expect(() => db.transaction('accounts')).toThrow();
+  });
+});
+
+/** Esquema v2 copiado LITERALMENTE de la versión con tarjetas (no se importa), con tarjetas, compras y pagos de hoy. */
+async function createV2(dbName: string) {
+  const db = await openDB(dbName, 2, {
+    upgrade(d, oldVersion) {
+      if (oldVersion < 1) {
+        d.createObjectStore('accounts', { keyPath: 'id' });
+        const transactions = d.createObjectStore('transactions', { keyPath: 'id' });
+        transactions.createIndex('by-date', 'date');
+        transactions.createIndex('by-account-date', 'accountDates', { multiEntry: true });
+        d.createObjectStore('scheduledExpenses', { keyPath: 'id' }).createIndex('by-account', 'accountId');
+        d.createObjectStore('meta', { keyPath: 'key' });
+      }
+      d.createObjectStore('scheduledIncomes', { keyPath: 'id' }).createIndex('by-account', 'accountId');
+      d.createObjectStore('creditCards', { keyPath: 'id' });
+      d.createObjectStore('cardPurchases', { keyPath: 'id' }).createIndex('by-card', 'cardId');
+    },
+  });
+  await db.put('accounts', { id: 'a1', name: 'Bancolombia', type: 'BANK', initialBalance: '1500000', currency: 'COP' });
+  await db.put('creditCards', V2_CARD);
+  await db.put('cardPurchases', V2_PURCHASE);
+  await db.put('transactions', V2_PAYMENT);
+  await db.put('meta', { key: 'lastBackupAt', value: '2026-03-01T00:00:00.000Z' });
+  db.close();
+}
+const V2_CARD = {
+  id: 'c1', name: 'Visa', dueDay: 15, cutDay: 30, paymentAccountId: 'a1', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', currency: 'COP',
+  rateBasis: 'MV', ratePpm: 20000, feeStartMonth: '2026-01', feesSettledThrough: '2026-02',
+};
+const V2_PURCHASE = {
+  id: 'p1', cardId: 'c1', description: 'Nevera', category: 'Hogar', amount: '1200000', currency: 'COP', installments: 12,
+  purchaseDate: '2026-01-10T00:00:00.000Z', firstDueDate: '2026-02-15T00:00:00.000Z', monthlyRatePpm: 20000, paidInstallments: 2, closedOn: null, dueDayAnchor: 15,
+};
+const V2_PAYMENT = {
+  id: 'cp-p1-2', type: 'EXPENSE', amount: '100000', currency: 'COP', date: '2026-03-15T00:00:00.000Z', description: 'Nevera (cuota 2/12)',
+  category: 'Hogar', accountId: 'a1', fromAccountId: null, toAccountId: null, accountDates: ['a1|2026-03-15T00:00:00.000Z'],
+};
+
+describe('actualización v2 -> v3', () => {
+  it('conserva intactas tarjetas, compras y pagos de hoy y deja los pagos nuevos vacíos', async () => {
+    await createV2(name);
+    const db = await openCurrent();
+    expect(db.version).toBe(3);
+    expect(await db.get('creditCards', 'c1')).toEqual(V2_CARD);
+    expect(await db.get('cardPurchases', 'p1')).toEqual(V2_PURCHASE);
+    expect(await db.get('transactions', 'cp-p1-2')).toEqual(V2_PAYMENT);
+    expect((await db.get('meta', 'lastBackupAt'))?.value).toBe('2026-03-01T00:00:00.000Z');
+    expect(await db.getAll('cardPayments')).toEqual([]);
+    expect((await db.getAllFromIndex('cardPurchases', 'by-card', 'c1')).map((p) => p.id)).toEqual(['p1']);
+    expect((await new IdbLedgerStore(db).readAll()).cardPurchases[0]!.paidInstallments).toBe(2);
+  });
+
+  it('el almacén nuevo ordena los pagos por tarjeta y orden, y no admite dos con el mismo orden', async () => {
+    await createV2(name);
+    const db = await openCurrent();
+    const index = db.transaction('cardPayments').store.index('by-card');
+    expect(index.keyPath).toEqual(['cardId', 'seq']);
+    expect(index.unique).toBe(true);
   });
 });

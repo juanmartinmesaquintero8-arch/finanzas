@@ -9,13 +9,16 @@ import {
   ScheduledExpense,
   ScheduledIncome,
   TransactionFactory,
+  createCardPayment,
   type AccountType,
+  type Allocation,
+  type CardPayment,
   type CardFee,
   type Frequency,
   type Transaction,
 } from '@finanzas/domain';
 import { parseDay } from '@/application/support';
-import type { StoredAccount, StoredCardPurchase, StoredCreditCard, StoredScheduledExpense, StoredScheduledIncome, StoredTransaction } from './database';
+import type { StoredAccount, StoredAllocation, StoredCardPayment, StoredCardPurchase, StoredCreditCard, StoredScheduledExpense, StoredScheduledIncome, StoredTransaction } from './database';
 
 /** Separador de la clave compuesta `cuenta|fecha`. */
 const KEY_SEP = '|';
@@ -199,6 +202,49 @@ export function toCardPurchase(row: StoredCardPurchase): CardPurchase {
     paidInstallments: row.paidInstallments,
     closedOn: row.closedOn ? parseDay(row.closedOn) : undefined,
     dueDayAnchor: row.dueDayAnchor ?? undefined,
+  });
+}
+
+function toStoredAllocation(a: Allocation): StoredAllocation {
+  if (a.kind === 'INSTALLMENT') return { kind: a.kind, purchaseId: a.purchaseId, number: a.number, interest: a.interest.amount.toString(), capital: a.capital.amount.toString() };
+  if (a.kind === 'EXTRA') return { kind: a.kind, purchaseId: a.purchaseId, capital: a.capital.amount.toString() };
+  return { kind: a.kind, month: a.month, amount: a.amount.amount.toString() };
+}
+
+function toAllocation(a: StoredAllocation, currency: string): Allocation {
+  const money = (v: string) => Money.of(BigInt(v), currency);
+  if (a.kind === 'INSTALLMENT') return { kind: a.kind, purchaseId: a.purchaseId, number: a.number, interest: money(a.interest), capital: money(a.capital) };
+  if (a.kind === 'EXTRA') return { kind: a.kind, purchaseId: a.purchaseId, capital: money(a.capital) };
+  return { kind: a.kind, month: a.month, amount: money(a.amount) };
+}
+
+export function toStoredCardPayment(p: CardPayment): StoredCardPayment {
+  return {
+    id: p.id,
+    cardId: p.cardId,
+    seq: p.seq,
+    paidOn: p.paidOn.toISOString(),
+    fromAccountId: p.fromAccountId,
+    total: p.total.amount.toString(),
+    currency: p.total.currency,
+    extraMode: p.extraMode ?? null,
+    allocations: p.allocations.map(toStoredAllocation),
+    transactionIds: [...p.transactionIds],
+  };
+}
+
+/** Lee un pago guardado validando sus invariantes (el reparto suma exactamente el total). */
+export function toCardPayment(row: StoredCardPayment): CardPayment {
+  return createCardPayment({
+    id: row.id,
+    cardId: row.cardId,
+    seq: row.seq,
+    paidOn: parseDay(row.paidOn),
+    fromAccountId: row.fromAccountId,
+    total: Money.of(BigInt(row.total), row.currency),
+    extraMode: row.extraMode ?? undefined,
+    allocations: row.allocations.map((a) => toAllocation(a, row.currency)),
+    transactionIds: row.transactionIds,
   });
 }
 

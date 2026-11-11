@@ -55,7 +55,7 @@ async function seedBasics(svc: AppServices) {
 
 describe('copia v2: ingresos programados', () => {
   it('la versión del formato es 3 y el tope de ingresos es 2.000', () => {
-    expect(BACKUP_VERSION).toBe(4);
+    expect(BACKUP_VERSION).toBe(5);
     expect(MAX_ITEMS.scheduledIncomes).toBe(2000);
   });
 
