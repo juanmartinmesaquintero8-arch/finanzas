@@ -36,7 +36,7 @@ describe('Programados: Tarjetas', () => {
     expect(await screen.findByText('Aquí verás lo que debes en tus tarjetas de crédito. Empieza agregando una.')).toBeInTheDocument();
   });
 
-  it('flujo completo: crea la tarjeta, agrega la compra con vista previa exacta y paga la cuota', async () => {
+  it('flujo completo: crea la tarjeta, agrega la compra con vista previa exacta y abona con «Pagar tarjeta»', async () => {
     await renderWithServices(<ScheduledPage />, services);
     await userEvent.click(await screen.findByRole('button', { name: 'Agregar tarjeta' }));
     await userEvent.type(await screen.findByLabelText('Nombre'), 'Visa Bancolombia');
@@ -57,24 +57,29 @@ describe('Programados: Tarjetas', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sí, guardar la compra' }));
 
     expect(await screen.findByText('Debes en total $1.200.000')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar cuota: Nevera' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
+    // Aún no vence nada (la 1 es del 15 de abril): todo lo que se paga es plata de más.
+    await userEvent.click(screen.getByRole('button', { name: 'Pagar tarjeta Visa Bancolombia' }));
+    await userEvent.type(await screen.findByLabelText('¿Cuánto pagaste?'), '100000');
+    await userEvent.click(screen.getByRole('button', { name: 'Continuar' }));
+    expect(await screen.findByRole('heading', { name: 'Así se reparte tu pago de $100.000' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Terminar antes' })).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Sí, registrar el pago' }));
+    expect(await screen.findByText('Pago registrado.')).toBeInTheDocument();
     expect(await screen.findByText('Debes en total $1.100.000')).toBeInTheDocument();
-    expect(screen.getByText('1/12 cuotas')).toBeInTheDocument();
-    expect((await services.transactions.page({})).items).toHaveLength(2);
-    expect((await services.summary.projection('2026-03-31')).netWorth.amount).toBe('4876000');
+    expect(screen.getByText('Pagadas 0 · faltan 11')).toBeInTheDocument();
+    expect((await services.transactions.page({})).items).toHaveLength(1);
+    expect((await services.summary.projection('2026-03-31')).netWorth.amount).toBe('4900000');
   });
 
   it('manejo con movimiento: una compra nueva hace aparecer la cuota del mes siguiente en la pantalla', async () => {
     const card = await createCard({ feeKind: 'ON_MOVEMENT', feeAmount: '18000' });
     await renderWithServices(<ScheduledPage />, services);
     await screen.findByText('Debes en total $0');
-    expect(screen.queryByRole('button', { name: /Pagar manejo/ })).toBeNull();
+    expect(screen.queryByText('Manejo Visa (marzo 2026)')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pagar tarjeta Visa' })).toBeNull();
     await services.cards.addPurchase({ cardId: card.id, description: 'Libro', amount: '50000', installments: 1, purchaseDate: '2026-03-02', firstDueDate: '2026-04-15', withoutInterest: true });
-    expect(await screen.findByRole('button', { name: 'Pagar manejo de marzo 2026' })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de marzo 2026' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Pagar manejo de marzo 2026' })).toBeNull());
+    expect(await screen.findByText('Manejo Visa (marzo 2026)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pagar tarjeta Visa' })).toBeInTheDocument();
   });
 
   it('con una cuenta tipo crédito avisa para no contar doble', async () => {

@@ -85,6 +85,8 @@ export interface PaymentOutcome {
   remainingInstallments: number;
   /** Valor de la próxima cuota (capital + interés); cero si no queda ninguna. */
   nextInstallment: Money;
+  /** Vencimiento de la última cuota que quedaría; null si no queda ninguna. */
+  lastDueDate: Date | null;
 }
 
 export interface PaymentPreview {
@@ -98,7 +100,11 @@ export interface PaymentPreview {
 
 function outcome(purchase: CardPurchase, payments: readonly CardPayment[], cutDay: number | undefined, on: Date, currency: string): PaymentOutcome {
   const pending = purchaseSchedule(purchase, payments, cutDay, on).filter((r) => r.remaining.isPositive());
-  return { remainingInstallments: pending.length, nextInstallment: pending[0]?.remaining ?? Money.zero(currency) };
+  return {
+    remainingInstallments: pending.length,
+    nextInstallment: pending[0]?.remaining ?? Money.zero(currency),
+    lastDueDate: pending[pending.length - 1]?.dueDate ?? null,
+  };
 }
 
 /** Desglose de un pago antes de confirmarlo: por compra, por manejo y, si hay plata de más, las dos opciones. */

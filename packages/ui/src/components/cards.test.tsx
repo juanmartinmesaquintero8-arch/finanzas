@@ -41,8 +41,9 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   monthlyRatePpm: 20000,
   closedOn: null,
   dueDayAnchor: 15,
+  paidCount: 3,
+  installmentCount: 12,
   next: installment(4, '2026-12-15', '118000', '100000', '18000'),
-  settle: { capital: '900000', interest: '18000', total: '918000' },
   ...over,
 });
 
@@ -63,6 +64,9 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   purchases: [purchase()],
   pendingFees: [{ month: '2026-11', dueDate: '2026-12-15', amount: '18000' }],
   lastPaidFeeMonth: null,
+  overdue: '0',
+  lastCardPayment: null,
+  payable: true,
   ...over,
 });
 
@@ -75,11 +79,9 @@ function api(over: Partial<CardsApi> = {}): CardsApi {
     addPurchase: ok(),
     updatePurchase: ok(),
     removePurchase: ok(),
-    payInstallment: ok(),
     undoLastPayment: ok(),
-    settle: ok(),
-    payFee: ok(),
     undoLastFee: ok(),
+    paymentShortcuts: vi.fn().mockResolvedValue({ ok: true, thisMonth: '0', max: '0' }), previewCardPayment: vi.fn().mockResolvedValue({ ok: false, error: 'sin desglose' }), payCard: ok(), undoLastCardPayment: ok(),
     cardChangeImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
     purchaseRemovalImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
     purchaseChangeImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
@@ -402,63 +404,18 @@ describe('CardsScreen', () => {
     expect(screen.getByText('Debes en total $900.000')).toBeInTheDocument();
     expect(screen.getByText('Próxima cuota $118.000 el 15 dic')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Agregar compra en Visa Bancolombia' })).toBeInTheDocument();
-    expect(screen.getByText('3/12 cuotas')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Pagar cuota: Nevera' })).toBeInTheDocument();
+    expect(screen.getByText('Pagadas 3 · faltan 9')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pagar tarjeta Visa Bancolombia' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Deshacer último pago: Nevera' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Liquidar: Nevera' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Pagar manejo de noviembre 2026' })).toBeInTheDocument();
+    expect(screen.getByText('Manejo Visa Bancolombia (noviembre 2026)')).toBeInTheDocument();
   });
 
   it('una compra sin pagos no ofrece deshacer; una cerrada no ofrece pagar', () => {
-    setup([card({ purchases: [purchase({ paidInstallments: 0 }), purchase({ id: 'p2', description: 'Sofá', closedOn: '2026-10-01', next: null, settle: null })] })]);
+    setup([card({ purchases: [purchase({ paidInstallments: 0 }), purchase({ id: 'p2', description: 'Sofá', closedOn: '2026-10-01', next: null })] })]);
     expect(screen.queryByRole('button', { name: 'Deshacer último pago: Nevera' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Pagar cuota: Sofá' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Deshacer último pago: Sofá' })).toBeNull();
     expect(screen.getByText('Liquidada el 1 oct')).toBeInTheDocument();
-  });
-
-  it('pagar cuota: cuenta de la tarjeta, hoy, capital fijo e interés editable', async () => {
-    const a = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar cuota: Nevera' }));
-    const panel = screen.getByRole('group', { name: 'Pagar cuota de Nevera' });
-    expect(within(panel).getByRole('radio', { name: 'Nu' })).toHaveAttribute('aria-checked', 'true');
-    expect(within(panel).getByLabelText('Fecha de pago')).toHaveValue(TODAY);
-    expect(within(panel).getByText('$100.000')).toBeInTheDocument();
-    const interest = within(panel).getByLabelText('Intereses de esta cuota');
-    expect(interest).toHaveValue('18.000');
-    expect(within(panel).getByText('Ajústalo si tu extracto dice otro valor.')).toBeInTheDocument();
-    await userEvent.clear(interest);
-    await userEvent.type(interest, '20000');
-    expect(within(panel).getByText('Total: $120.000')).toBeInTheDocument();
-    await userEvent.dblClick(within(panel).getByRole('button', { name: 'Confirmar pago' }));
-    expect(a.payInstallment).toHaveBeenCalledOnce();
-    expect(a.payInstallment).toHaveBeenCalledWith('p1', { fromAccountId: 'nu', paidOn: TODAY, interest: '20000', installment: 4 });
-  });
-
-  it('un interés vacío cuenta como 0', async () => {
-    const a = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar cuota: Nevera' }));
-    await userEvent.clear(screen.getByLabelText('Intereses de esta cuota'));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    expect(a.payInstallment).toHaveBeenCalledWith('p1', expect.objectContaining({ interest: '0' }));
-  });
-
-  it('un pago rechazado muestra el motivo y deja el panel abierto', async () => {
-    setup([card()], { payInstallment: vi.fn().mockResolvedValue({ ok: false, error: 'Esa cuota todavía no es la siguiente. Revisa la lista.' }) });
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar cuota: Nevera' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Esa cuota todavía no es la siguiente. Revisa la lista.');
-    expect(screen.getByRole('group', { name: 'Pagar cuota de Nevera' })).toBeInTheDocument();
-  });
-
-  it('liquidar confirma el total y avisa que no se puede deshacer', async () => {
-    const a = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Liquidar: Nevera' }));
-    const panel = screen.getByRole('group', { name: 'Liquidar Nevera' });
-    expect(within(panel).getByText('Vas a pagar $918.000 y esta compra queda cerrada: $900.000 de lo que debes y $18.000 de intereses de la próxima cuota.')).toBeInTheDocument();
-    expect(within(panel).getByText('Después de liquidar no se puede deshacer.')).toBeInTheDocument();
-    await userEvent.click(within(panel).getByRole('button', { name: 'Sí, liquidar' }));
-    expect(a.settle).toHaveBeenCalledWith('p1', { fromAccountId: 'nu', paidOn: TODAY });
   });
 
   it('deshacer pide confirmación', async () => {
@@ -467,17 +424,6 @@ describe('CardsScreen', () => {
     expect(a.undoLastPayment).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Sí, deshacer' }));
     expect(a.undoLastPayment).toHaveBeenCalledWith('p1', { installment: 3 });
-  });
-
-  it('pagar manejo permite ajustar el valor', async () => {
-    const a = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Pagar manejo de noviembre 2026' }));
-    const value = screen.getByLabelText('Valor del manejo');
-    expect(value).toHaveValue('18.000');
-    await userEvent.clear(value);
-    await userEvent.type(value, '19000');
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmar pago' }));
-    expect(a.payFee).toHaveBeenCalledWith('c1', '2026-11', { fromAccountId: 'nu', paidOn: TODAY, amount: '19000' });
   });
 
   it('borrar la tarjeta avisa qué pasa con los pagos', async () => {

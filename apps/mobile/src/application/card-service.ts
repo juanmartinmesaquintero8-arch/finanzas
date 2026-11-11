@@ -8,6 +8,11 @@ import {
   buildInstallmentPlan,
   billingMonthOf,
   cardDebtWithPayments,
+  cardDue,
+  purchaseBalances,
+  purchaseSchedule,
+  type Allocation,
+  type DueItem,
   createCardPayment,
   maxPayment,
   paymentPreview,
@@ -37,6 +42,8 @@ import {
   type CardPaymentPreview,
   type CardPaymentPreviewInput,
   type CardPaymentPreviewResult,
+  type CardPaymentShortcuts,
+  CARD_CHANGED,
   type CardView,
   type FeeImpact,
   type PayFeeInput,
@@ -72,7 +79,7 @@ const LATE_PURCHASE = 'Esa compra es de un mes con manejo ya pagado, así que no
 /** Los pagos y deshacer por compra o por manejo no se mezclan con el pago único de la tarjeta. */
 const LEGACY_LOCKED = 'Esta tarjeta ya usa el pago único. Para corregir, usa «Deshacer último pago de la tarjeta».';
 const BAD_PAYMENT_ID = 'No pudimos registrar el pago. Cierra el formulario y ábrelo de nuevo.';
-const CARD_CHANGED = 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.';
+const OTHER_VALUES = 'Ya registraste un pago con otros valores. Cierra el formulario y revisa el historial de la tarjeta.';
 const NOTHING_TO_UNDO = 'Esta tarjeta no tiene pagos para deshacer.';
 const CUT_LOCKED = 'Esta tarjeta ya tiene pagos con el pago único. Para cambiar el día de corte, primero deshazlos con «Deshacer último pago de la tarjeta».';
 /** El id del pago lo crea el cliente; con él, `pt-<id>-<nn>` siempre cabe en un id válido de movimiento. */
@@ -185,9 +192,31 @@ function byPendingFirst(a: PurchaseView, b: PurchaseView): number {
 
 const isOpen = (p: CardPurchase): boolean => !p.isClosed && p.paidInstallments < p.installments;
 
-function toPurchaseView(p: CardPurchase): PurchaseView {
-  const next = isOpen(p) ? buildInstallmentPlan(p)[p.paidInstallments]! : null;
-  const offer = isOpen(p) ? settleOffer(p) : null;
+/**
+ * Vista de una compra. Sin pagos únicos en la tarjeta, la cuota sale del plan como siempre; con pagos únicos,
+ * del estado calculado con esos pagos (parciales y de más) al día de hoy.
+ */
+function toPurchaseView(p: CardPurchase, card: CreditCard, payments: readonly CardPayment[], today: Date): PurchaseView {
+  if (payments.length === 0 || p.isClosed) {
+    const next = isOpen(p) ? buildInstallmentPlan(p)[p.paidInstallments]! : null;
+    return { ...purchaseFields(p), paidCount: p.paidInstallments, installmentCount: p.installments, next: next && toInstallmentView(next) };
+  }
+  const schedule = purchaseSchedule(p, payments, card.cutDay, today);
+  const row = schedule.find((r) => r.remaining.isPositive());
+  const next: InstallmentView | null = row
+    ? {
+        number: row.number,
+        dueDate: isoDay(row.dueDate),
+        capital: row.capitalDue.subtract(row.capitalPaid).amount.toString(),
+        interest: row.interestDue.subtract(row.interestPaid).amount.toString(),
+        total: row.remaining.amount.toString(),
+      }
+    : null;
+  const paidCount = schedule.filter((r) => !r.remaining.isPositive()).length;
+  return { ...purchaseFields(p), paidCount, installmentCount: schedule.length, next };
+}
+
+function purchaseFields(p: CardPurchase): Omit<PurchaseView, 'next' | 'paidCount' | 'installmentCount'> {
   return {
     id: p.id,
     cardId: p.cardId,
@@ -201,9 +230,44 @@ function toPurchaseView(p: CardPurchase): PurchaseView {
     monthlyRatePpm: p.monthlyRatePpm,
     closedOn: p.closedOn ? isoDay(p.closedOn) : null,
     dueDayAnchor: p.dueDayAnchor ?? null,
-    next: next && toInstallmentView(next),
-    settle: offer && { capital: offer.capital.amount.toString(), interest: offer.interest.amount.toString(), total: offer.total.amount.toString() },
   };
+}
+
+/** Cuotas de manejo hasta `horizon` con lo que aún falta de cada una (lo pagado con pagos únicos se descuenta). */
+function feesStillOwed(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], horizon: Date): CardView['pendingFees'] {
+  const paid = new Map<string, bigint>();
+  for (const p of payments) for (const a of p.allocations) if (a.kind === 'FEE') paid.set(a.month, (paid.get(a.month) ?? 0n) + a.amount.amount);
+  return cardFeesDue(card, purchases, BEGINNING, horizon)
+    .map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: (f.amount.amount - (paid.get(f.month) ?? 0n)).toString() }))
+    .filter((f) => BigInt(f.amount) > 0n);
+}
+
+/** Lo del periodo (aún no vencido) que el pago no cubre, y la fecha de lo primero que queda sin cubrir. */
+function dueSoonAfter(due: readonly DueItem[], afterOverdue: bigint): CardPaymentPreview['dueSoon'] {
+  let rest = afterOverdue;
+  let left = 0n;
+  let date: Date | null = null;
+  for (const item of due.filter((i) => !i.overdue)) {
+    const covered = item.amount.amount < rest ? item.amount.amount : rest;
+    rest -= covered;
+    if (covered < item.amount.amount) {
+      left += item.amount.amount - covered;
+      date ??= item.dueDate;
+    }
+  }
+  return date ? { amount: left.toString(), dueDate: isoDay(date) } : null;
+}
+
+/** Firma estable de un reparto: si cambia algo de lo que se mostró, cambia la firma. */
+function signatureOf(total: Money, paidOn: Date, allocations: readonly Allocation[]): string {
+  const parts = allocations.map((a) =>
+    a.kind === 'FEE'
+      ? `F:${a.month}:${a.amount.amount}`
+      : a.kind === 'EXTRA'
+        ? `E:${a.purchaseId}:${a.capital.amount}`
+        : `I:${a.purchaseId}:${a.number}:${a.interest.amount}:${a.capital.amount}`,
+  );
+  return [total.amount.toString(), isoDay(paidOn), ...parts].join('|');
 }
 
 /** La próxima fecha con algo por pagar y la suma de las cuotas que caen ese día. */
@@ -243,14 +307,18 @@ export class CardService {
       this.ctx.ledger.feePaymentIds(),
       this.ctx.cardPayments.findAll(),
     ]);
-    const horizon = feeHorizon(todayISO(this.ctx.now()));
+    const todayText = todayISO(this.ctx.now());
+    const horizon = feeHorizon(todayText);
     const lastPaid = latestFeeMonths(feeIds);
-    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, payments, horizon, lastPaid.get(card.id) ?? null));
+    return [...cards].sort(byName).map((card) => this.toCardView(card, purchases, payments, parseDay(todayText), horizon, lastPaid.get(card.id) ?? null));
   }
 
-  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], horizon: Date, lastPaidFeeMonth: string | null): CardView {
+  private toCardView(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], today: Date, horizon: Date, lastPaidFeeMonth: string | null): CardView {
     const own = purchases.filter((p) => p.cardId === card.id);
-    const views = own.map(toPurchaseView).sort(byPendingFirst);
+    const ownPayments = payments.filter((p) => p.cardId === card.id).sort((a, b) => a.seq - b.seq);
+    const views = own.map((p) => toPurchaseView(p, card, ownPayments, today)).sort(byPendingFirst);
+    const last = ownPayments[ownPayments.length - 1];
+    const overdue = cardDue(card, own, ownPayments, today).filter((i) => i.overdue);
     return {
       id: card.id,
       name: card.name,
@@ -266,8 +334,11 @@ export class CardService {
       debt: cardDebtWithPayments([card], own, payments, CURRENCY).amount.toString(),
       next: nextDue(views),
       purchases: views,
-      pendingFees: cardFeesDue(card, purchases, BEGINNING, horizon).map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: f.amount.amount.toString() })),
+      pendingFees: feesStillOwed(card, purchases, ownPayments, horizon),
       lastPaidFeeMonth,
+      overdue: Money.sum(overdue.map((i) => i.amount), CURRENCY).amount.toString(),
+      lastCardPayment: last ? { id: last.id, total: last.total.amount.toString(), paidOn: isoDay(last.paidOn) } : null,
+      payable: maxPayment(card, own, ownPayments, today, CURRENCY).isPositive(),
     };
   }
 
@@ -581,6 +652,20 @@ export class CardService {
       const [purchases, payments] = await this.cardState(card.id);
       const { amount, paidOn, preview } = this.planPayment(card, purchases, payments, input);
       const names = new Map(purchases.map((p) => [p.id, p.description]));
+      const due = cardDue(card, purchases, payments, paidOn);
+      const overdue = due.filter((i) => i.overdue).reduce((sum, i) => sum + i.amount.amount, 0n);
+      const pendingCapital = new Map(purchaseBalances(card, purchases, payments, paidOn).map((b) => [b.purchase.id, b.pendingCapital.amount]));
+      const firstExtra = preview.allocations.find((a) => a.kind === 'EXTRA');
+      // Mismo orden que sugiere el dominio para la plata de más: mayor tasa, luego la compra más antigua.
+      const targets = purchaseBalances(card, purchases, payments, paidOn)
+        .filter((b) => b.extraCapacity.isPositive())
+        .map((b) => b.purchase)
+        .sort((a, b) => b.monthlyRatePpm - a.monthlyRatePpm || a.purchaseDate.getTime() - b.purchaseDate.getTime() || a.id.localeCompare(b.id));
+      const outcomeView = (o: PaymentPreview['outcomes'][number]['SHORTEN']) => ({
+        remainingInstallments: o.remainingInstallments,
+        nextInstallment: o.nextInstallment.amount.toString(),
+        endDate: o.lastDueDate && isoDay(o.lastDueDate),
+      });
       const view: CardPaymentPreview = {
         total: amount.amount.toString(),
         max: maxPayment(card, purchases, payments, paidOn, CURRENCY).amount.toString(),
@@ -591,14 +676,18 @@ export class CardService {
           interest: p.interest.amount.toString(),
           capital: p.capital.amount.toString(),
           extraCapital: p.extraCapital.amount.toString(),
+          // Todo su capital pendiente queda cubierto: lo debido va antes que el capital, así que no queda nada.
+          paidOff: p.capital.amount + p.extraCapital.amount === pendingCapital.get(p.purchaseId),
         })),
         extraCapital: preview.extraCapital.amount.toString(),
         needsMode: preview.extraCapital.isPositive(),
-        outcomes: preview.outcomes.map((o) => ({
-          purchaseId: o.purchaseId,
-          SHORTEN: { remainingInstallments: o.SHORTEN.remainingInstallments, nextInstallment: o.SHORTEN.nextInstallment.amount.toString() },
-          LOWER: { remainingInstallments: o.LOWER.remainingInstallments, nextInstallment: o.LOWER.nextInstallment.amount.toString() },
-        })),
+        outcomes: preview.outcomes.map((o) => ({ purchaseId: o.purchaseId, SHORTEN: outcomeView(o.SHORTEN), LOWER: outcomeView(o.LOWER) })),
+        // Lo vencido se reparte antes que todo lo demás: lo que el pago no alcanza a cubrir sigue vencido.
+        pending: (overdue > amount.amount ? overdue - amount.amount : 0n).toString(),
+        dueSoon: dueSoonAfter(due, amount.amount > overdue ? amount.amount - overdue : 0n),
+        extraPurchaseId: firstExtra?.kind === 'EXTRA' ? firstExtra.purchaseId : null,
+        extraTargets: firstExtra ? targets.map((p) => ({ purchaseId: p.id, description: p.description })) : [],
+        signature: signatureOf(amount, paidOn, preview.allocations),
       };
       return { ok: true, preview: view };
     } catch (e) {
@@ -614,12 +703,24 @@ export class CardService {
     return writeAction(this.ctx, async () => {
       const card = await this.requireCard(cardId);
       if (typeof input.paymentId !== 'string' || !PAYMENT_ID.test(input.paymentId)) throw new AppError(BAD_PAYMENT_ID);
-      if (await this.ctx.cardPayments.findById(input.paymentId)) return; // Segundo toque.
+      const existing = await this.ctx.cardPayments.findById(input.paymentId);
+      if (existing) {
+        // Segundo toque: si es el mismo pago no se hace nada; si trae otros valores, se avisa.
+        const same =
+          existing.cardId === card.id &&
+          existing.total.amount.toString() === String(input.amount).trim() &&
+          isoDay(existing.paidOn) === input.paidOn &&
+          (input.expected === undefined || input.expected === signatureOf(existing.total, existing.paidOn, existing.allocations));
+        if (!same) throw new AppError(OTHER_VALUES);
+        return;
+      }
       if ((await this.ctx.cardPayments.count()) >= MAX_CARD_PAYMENTS) {
         throw new AppError(`Llegaste al máximo de ${MAX_CARD_PAYMENTS.toLocaleString('es-CO')} pagos de tarjeta.`);
       }
       const [purchases, payments] = await this.cardState(card.id);
       const { amount, paidOn, preview } = this.planPayment(card, purchases, payments, input);
+      // Lo que se guarda tiene que ser exactamente el desglose que se mostró.
+      if (input.expected !== undefined && input.expected !== signatureOf(amount, paidOn, preview.allocations)) throw new AppError(CARD_CHANGED);
       await this.assertAccount(input.fromAccountId);
       const movements = this.cardPaymentMovements(card, purchases, preview, input.paymentId, input.fromAccountId, paidOn);
       const lastSeq = lastSeqOf(payments);
@@ -636,6 +737,20 @@ export class CardService {
       });
       if ((await this.ctx.ledger.writeCardPaymentEvent(lastSeq, payment, movements, purchases)) === 'changed') throw new AppError(CARD_CHANGED);
     });
+  }
+
+  /** Atajos del formulario al día del pago: «Lo de este mes» (lo vencido y lo del periodo) y «Todo» (el máximo). */
+  async paymentShortcuts(cardId: string, paidOnText: string): Promise<CardPaymentShortcuts> {
+    try {
+      const card = await this.requireCard(cardId);
+      const [purchases, payments] = await this.cardState(card.id);
+      const paidOn = parseCardDate(paidOnText);
+      validatePaymentDate(paidOn, payments, parseDay(todayISO(this.ctx.now())));
+      const thisMonth = cardDue(card, purchases, payments, paidOn).reduce((sum, i) => sum + i.amount.amount, 0n);
+      return { ok: true, thisMonth: thisMonth.toString(), max: maxPayment(card, purchases, payments, paidOn, CURRENCY).amount.toString() };
+    } catch (e) {
+      return { ok: false, error: toMessage(e) };
+    }
   }
 
   /** Quita el último pago único de la tarjeta y sus movimientos, en una sola escritura. */

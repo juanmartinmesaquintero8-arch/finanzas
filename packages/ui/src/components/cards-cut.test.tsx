@@ -29,6 +29,9 @@ const card = (over: Partial<CardView> = {}): CardView => ({
   purchases: [],
   pendingFees: [],
   lastPaidFeeMonth: null,
+  overdue: '0',
+  lastCardPayment: null,
+  payable: true,
   ...over,
 });
 
@@ -41,11 +44,9 @@ function api(over: Partial<CardsApi> = {}): CardsApi {
     addPurchase: ok(),
     updatePurchase: ok(),
     removePurchase: ok(),
-    payInstallment: ok(),
     undoLastPayment: ok(),
-    settle: ok(),
-    payFee: ok(),
     undoLastFee: ok(),
+    paymentShortcuts: vi.fn().mockResolvedValue({ ok: true, thisMonth: '0', max: '0' }), previewCardPayment: vi.fn().mockResolvedValue({ ok: false, error: 'sin desglose' }), payCard: ok(), undoLastCardPayment: ok(),
     cardChangeImpact: vi.fn().mockResolvedValue(NONE),
     purchaseRemovalImpact: vi.fn().mockResolvedValue(NONE),
     purchaseChangeImpact: vi.fn().mockResolvedValue(NONE),
