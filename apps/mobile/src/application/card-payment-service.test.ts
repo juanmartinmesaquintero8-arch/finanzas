@@ -412,3 +412,43 @@ describe('quitar datos de ejemplo no deja un historial de pagos a medias', () =>
     expect((await s.cards.list())[0]!.debt).toBe('900000');
   });
 });
+
+describe('pagos del sistema anterior que se cruzan con un pago único', () => {
+  it('si el bloqueo se detecta al guardar, responden con el mensaje y no dicen que se guardó', async () => {
+    const { cardId, purchaseId } = await setup({ feeKind: 'FIXED_MONTHLY', feeAmount: '18000' });
+    expect(await s.cards.payInstallment(purchaseId, { fromAccountId: accountId, paidOn: '2026-04-15' })).toEqual({ ok: true });
+    expect(await s.cards.payFee(cardId, '2026-03', { fromAccountId: accountId, paidOn: '2026-04-15' })).toEqual({ ok: true });
+    expect(await s.cards.payCard(cardId, input({ amount: '1000', mode: 'SHORTEN' }))).toEqual({ ok: true });
+    // La revisión previa no ve el pago único (como si se hubiera guardado justo después de leer).
+    vi.spyOn(IdbCardPaymentRepository.prototype, 'countByCard').mockResolvedValue(0);
+    const rows = await db.count('transactions');
+    const fail = { ok: false, error: LEGACY };
+    expect(await s.cards.payInstallment(purchaseId, { fromAccountId: accountId, paidOn: '2026-04-15' })).toEqual(fail);
+    expect(await s.cards.undoLastPayment(purchaseId)).toEqual(fail);
+    expect(await s.cards.settle(purchaseId, { fromAccountId: accountId, paidOn: '2026-04-15' })).toEqual(fail);
+    expect(await s.cards.payFee(cardId, '2026-04', { fromAccountId: accountId, paidOn: '2026-04-15' })).toEqual(fail);
+    expect(await s.cards.undoLastFee(cardId)).toEqual(fail);
+    vi.restoreAllMocks();
+    expect(await db.count('transactions')).toBe(rows);
+    expect((await db.getAll('cardPurchases'))[0]!.paidInstallments).toBe(1);
+  });
+});
+
+describe('pago único que se cruza con un cambio en la tarjeta', () => {
+  it('si una compra cambió entre el desglose y el guardado, avisa y no guarda', async () => {
+    const { cardId, purchaseId } = await setup();
+    const { IdbCardPurchaseRepository } = await import('@/data/idb-card.repository');
+    const real = IdbCardPurchaseRepository.prototype.findByCard;
+    // Lee la compra como estaba y, antes de guardar, otro toque paga una cuota con el sistema anterior.
+    vi.spyOn(IdbCardPurchaseRepository.prototype, 'findByCard').mockImplementation(async function (this: InstanceType<typeof IdbCardPurchaseRepository>, id: string) {
+      const before = await real.call(this, id);
+      const row = (await db.get('cardPurchases', purchaseId))!;
+      await db.put('cardPurchases', { ...row, paidInstallments: 1 });
+      return before;
+    });
+    expect(await s.cards.payCard(cardId, input())).toEqual({ ok: false, error: 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.' });
+    vi.restoreAllMocks();
+    expect(await db.count('cardPayments')).toBe(0);
+    expect(await movements()).toEqual([]);
+  });
+});

@@ -1,10 +1,10 @@
-import { Money, TransactionFactory, createCardPayment, type Allocation, type CardPayment, type Transaction } from '@finanzas/domain';
+import { CardPurchase, Money, TransactionFactory, createCardPayment, type Allocation, type CardPayment, type Transaction } from '@finanzas/domain';
 import { deleteDB } from 'idb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openFinanzasDb, type FinanzasDb, type StoredCardPayment, type StoredCreditCard } from './database';
 import { IdbCardPaymentRepository } from './idb-card.repository';
-import { IdbLedgerStore } from './idb-ledger-store';
-import { toCardPayment, toStoredCardPayment } from './mappers';
+import { IdbLedgerStore, LegacyLockedError } from './idb-ledger-store';
+import { toCardPayment, toStoredCardPayment, toStoredCardPurchase } from './mappers';
 
 let name = '';
 let db: FinanzasDb;
@@ -13,6 +13,9 @@ let n = 0;
 beforeEach(async () => {
   name = `card-payments-${++n}-${Math.random()}`;
   db = await openFinanzasDb(name);
+  // El pago se guarda solo si su tarjeta existe.
+  await db.put('creditCards', card('c1'));
+  await db.put('creditCards', card('c2'));
 });
 afterEach(async () => {
   db.close();
@@ -85,7 +88,7 @@ describe('writeCardPaymentEvent', () => {
   it('guarda el pago y sus movimientos juntos', async () => {
     const store = new IdbLedgerStore(db);
     const p = payment('x1', 1);
-    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p))).toBe('written');
+    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p), [])).toBe('written');
     expect((await db.getAll('transactions')).map((t) => t.id)).toEqual(['pt-x1-01', 'pt-x1-02']);
     const repo = new IdbCardPaymentRepository(db);
     expect(await repo.findById('x1')).toEqual(p);
@@ -95,9 +98,9 @@ describe('writeCardPaymentEvent', () => {
   it('repetir el mismo id no duplica nada: devuelve "ya registrado"', async () => {
     const store = new IdbLedgerStore(db);
     const p = payment('x1', 1);
-    await store.writeCardPaymentEvent(0, p, movementsOf(p));
+    await store.writeCardPaymentEvent(0, p, movementsOf(p), []);
     const again = payment('x1', 2, { transactionIds: ['pt-x1-09'] });
-    expect(await store.writeCardPaymentEvent(1, again, movementsOf(again))).toBe('already');
+    expect(await store.writeCardPaymentEvent(1, again, movementsOf(again), [])).toBe('already');
     expect(await db.count('cardPayments')).toBe(1);
     expect((await db.getAll('transactions')).map((t) => t.id)).toEqual(['pt-x1-01', 'pt-x1-02']);
   });
@@ -105,11 +108,11 @@ describe('writeCardPaymentEvent', () => {
   it('si el último orden de la tarjeta no es el esperado, no escribe nada: devuelve "cambió"', async () => {
     const store = new IdbLedgerStore(db);
     const first = payment('x1', 1);
-    await store.writeCardPaymentEvent(0, first, movementsOf(first));
+    await store.writeCardPaymentEvent(0, first, movementsOf(first), []);
     const stale = payment('x2', 1);
-    expect(await store.writeCardPaymentEvent(0, stale, movementsOf(stale))).toBe('changed');
+    expect(await store.writeCardPaymentEvent(0, stale, movementsOf(stale), [])).toBe('changed');
     const skipped = payment('x3', 3);
-    expect(await store.writeCardPaymentEvent(2, skipped, movementsOf(skipped))).toBe('changed');
+    expect(await store.writeCardPaymentEvent(2, skipped, movementsOf(skipped), [])).toBe('changed');
     expect((await db.getAll('cardPayments')).map((r) => r.id)).toEqual(['x1']);
     expect(await db.count('transactions')).toBe(2);
   });
@@ -117,16 +120,16 @@ describe('writeCardPaymentEvent', () => {
   it('el orden de otra tarjeta no cuenta', async () => {
     const store = new IdbLedgerStore(db);
     const other = payment('y1', 1, { cardId: 'c2' });
-    await store.writeCardPaymentEvent(0, other, movementsOf(other));
+    await store.writeCardPaymentEvent(0, other, movementsOf(other), []);
     const mine = payment('x1', 1);
-    expect(await store.writeCardPaymentEvent(0, mine, movementsOf(mine))).toBe('written');
+    expect(await store.writeCardPaymentEvent(0, mine, movementsOf(mine), [])).toBe('written');
   });
 
   it('es atómico: si falla un movimiento no queda ni el pago ni ningún movimiento', async () => {
     const store = new IdbLedgerStore(db);
     const p = payment('x1', 1);
     const bad = { ...movement('pt-x1-02'), id: undefined } as unknown as Transaction; // clave inválida
-    await expect(store.writeCardPaymentEvent(0, p, [movement('pt-x1-01'), bad])).rejects.toBeDefined();
+    await expect(store.writeCardPaymentEvent(0, p, [movement('pt-x1-01'), bad], [])).rejects.toBeDefined();
     expect(await db.count('cardPayments')).toBe(0);
     expect(await db.count('transactions')).toBe(0);
   });
@@ -135,14 +138,14 @@ describe('writeCardPaymentEvent', () => {
     await db.put('transactions', (await import('./mappers')).toStoredTransaction(movement('pt-x1-02')));
     const store = new IdbLedgerStore(db);
     const p = payment('x1', 1);
-    await expect(store.writeCardPaymentEvent(0, p, movementsOf(p))).rejects.toBeDefined();
+    await expect(store.writeCardPaymentEvent(0, p, movementsOf(p), [])).rejects.toBeDefined();
     expect(await db.count('cardPayments')).toBe(0);
     expect((await db.getAll('transactions')).map((t) => t.id)).toEqual(['pt-x1-02']);
   });
 
   it('rechaza un pago cuyo orden no sigue al esperado', async () => {
     const p = payment('x1', 3);
-    await expect(new IdbLedgerStore(db).writeCardPaymentEvent(0, p, movementsOf(p))).rejects.toThrow();
+    await expect(new IdbLedgerStore(db).writeCardPaymentEvent(0, p, movementsOf(p), [])).rejects.toThrow();
     expect(await db.count('cardPayments')).toBe(0);
   });
 });
@@ -152,8 +155,8 @@ describe('removeCardPaymentEvent', () => {
     const store = new IdbLedgerStore(db);
     const first = payment('x1', 1);
     const second = payment('x2', 2);
-    await store.writeCardPaymentEvent(0, first, movementsOf(first));
-    await store.writeCardPaymentEvent(1, second, movementsOf(second));
+    await store.writeCardPaymentEvent(0, first, movementsOf(first), []);
+    await store.writeCardPaymentEvent(1, second, movementsOf(second), []);
     await db.put('transactions', (await import('./mappers')).toStoredTransaction(movement('t-otro')));
 
     expect(await store.removeCardPaymentEvent(second)).toBe(true);
@@ -165,8 +168,8 @@ describe('removeCardPaymentEvent', () => {
     const store = new IdbLedgerStore(db);
     const first = payment('x1', 1);
     const second = payment('x2', 2);
-    await store.writeCardPaymentEvent(0, first, movementsOf(first));
-    await store.writeCardPaymentEvent(1, second, movementsOf(second));
+    await store.writeCardPaymentEvent(0, first, movementsOf(first), []);
+    await store.writeCardPaymentEvent(1, second, movementsOf(second), []);
     expect(await store.removeCardPaymentEvent(first)).toBe(false);
     expect(await db.count('cardPayments')).toBe(2);
     expect(await db.count('transactions')).toBe(4);
@@ -182,7 +185,7 @@ describe('repositorio de pagos de tarjeta', () => {
     const store = new IdbLedgerStore(db);
     for (const [id, seq, cardId] of [['x1', 1, 'c1'], ['y1', 1, 'c2'], ['x2', 2, 'c1']] as const) {
       const p = payment(id, seq, { cardId });
-      await store.writeCardPaymentEvent(seq - 1, p, movementsOf(p));
+      await store.writeCardPaymentEvent(seq - 1, p, movementsOf(p), []);
     }
     const repo = new IdbCardPaymentRepository(db);
     expect((await repo.findByCard('c1')).map((p) => p.id)).toEqual(['x1', 'x2']);
@@ -196,14 +199,14 @@ describe('pagos de tarjeta en las operaciones de todo el libro', () => {
     const store = new IdbLedgerStore(db);
     await db.put('creditCards', card('c1'));
     const p = payment('x1', 1);
-    await store.writeCardPaymentEvent(0, p, movementsOf(p));
+    await store.writeCardPaymentEvent(0, p, movementsOf(p), []);
     return { store, p };
   }
 
   it('borrar la tarjeta borra sus pagos y deja sus movimientos', async () => {
     const { store } = await seed();
     const other = payment('y1', 1, { cardId: 'c2' });
-    await store.writeCardPaymentEvent(0, other, movementsOf(other));
+    await store.writeCardPaymentEvent(0, other, movementsOf(other), []);
     await store.deleteCard('c1');
     expect((await db.getAll('cardPayments')).map((r) => r.id)).toEqual(['y1']);
     expect(await db.count('transactions')).toBe(4);
@@ -235,10 +238,10 @@ describe('pagos de tarjeta en las operaciones de todo el libro', () => {
 
 describe('escrituras del sistema anterior con pagos nuevos en la tarjeta', () => {
   it('no escriben nada si la tarjeta ya tiene un pago nuevo (aunque se crucen con él)', async () => {
-    const { CardPurchase, CreditCard } = await import('@finanzas/domain');
+    const { CreditCard } = await import('@finanzas/domain');
     const store = new IdbLedgerStore(db);
     const p = payment('x1', 1);
-    await store.writeCardPaymentEvent(0, p, movementsOf(p));
+    await store.writeCardPaymentEvent(0, p, movementsOf(p), []);
     const visa = CreditCard.create({ id: 'c1', name: 'Visa', dueDay: 15, paymentAccountId: 'a1', fee: { kind: 'FIXED_MONTHLY', amount: cop(18_000) }, feeStartMonth: '2026-03' });
     await db.put('creditCards', (await import('./mappers')).toStoredCreditCard(visa));
     const nevera = CardPurchase.create({
@@ -247,13 +250,52 @@ describe('escrituras del sistema anterior con pagos nuevos en la tarjeta', () =>
     await db.put('cardPurchases', (await import('./mappers')).toStoredCardPurchase(nevera));
     const paidVisa = CreditCard.create({ ...visa.toProps(), feesSettledThrough: '2026-03' });
 
-    expect(await store.writeCardPayment(nevera, nevera.markPaid(1), [movement('cp-p1-1')])).toBe(false);
-    expect(await store.writeFeePayment(visa, paidVisa, movement('cf-c1-2026-03'))).toBe(false);
+    await expect(store.writeCardPayment(nevera, nevera.markPaid(1), [movement('cp-p1-1')])).rejects.toBeInstanceOf(LegacyLockedError);
+    await expect(store.writeFeePayment(visa, paidVisa, movement('cf-c1-2026-03'))).rejects.toBeInstanceOf(LegacyLockedError);
     expect((await db.get('creditCards', 'c1'))!.feesSettledThrough).toBeNull();
     await db.put('creditCards', (await import('./mappers')).toStoredCreditCard(paidVisa));
-    expect(await store.writeFeeUndo(paidVisa, visa, 'pt-x1-01')).toBe(false);
+    await expect(store.writeFeeUndo(paidVisa, visa, 'pt-x1-01')).rejects.toBeInstanceOf(LegacyLockedError);
     expect((await db.get('cardPurchases', 'p1'))!.paidInstallments).toBe(0);
     expect((await db.get('creditCards', 'c1'))!.feesSettledThrough).toBe('2026-03');
     expect((await db.getAll('transactions')).map((t) => t.id)).toEqual(['pt-x1-01', 'pt-x1-02']);
+  });
+});
+
+describe('writeCardPaymentEvent: la tarjeta y sus compras siguen como en el desglose', () => {
+  const nevera = (over: Record<string, unknown> = {}) =>
+    CardPurchase.create({
+      id: 'p1', cardId: 'c1', description: 'Nevera', amount: cop(1_200_000), installments: 12, purchaseDate: day('2026-03-02'), firstDueDate: day('2026-04-15'),
+      monthlyRatePpm: 20_000, paidInstallments: 0, ...over,
+    });
+
+  it('con las mismas compras guarda', async () => {
+    await db.put('cardPurchases', toStoredCardPurchase(nevera()));
+    const p = payment('x1', 1);
+    expect(await new IdbLedgerStore(db).writeCardPaymentEvent(0, p, movementsOf(p), [nevera()])).toBe('written');
+  });
+
+  it('si la tarjeta se borró entretanto, no escribe nada', async () => {
+    await db.delete('creditCards', 'c1');
+    const p = payment('x1', 1);
+    expect(await new IdbLedgerStore(db).writeCardPaymentEvent(0, p, movementsOf(p), [])).toBe('changed');
+    expect(await db.count('cardPayments')).toBe(0);
+    expect(await db.count('transactions')).toBe(0);
+  });
+
+  it('si una compra cambió entretanto (cuota pagada, liquidada, nueva o borrada), no escribe nada', async () => {
+    const store = new IdbLedgerStore(db);
+    const p = payment('x1', 1);
+    await db.put('cardPurchases', toStoredCardPurchase(nevera({ paidInstallments: 1 })));
+    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p), [nevera()])).toBe('changed');
+    await db.put('cardPurchases', toStoredCardPurchase(nevera().close(day('2026-04-10'))));
+    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p), [nevera()])).toBe('changed');
+    await db.put('cardPurchases', toStoredCardPurchase(nevera()));
+    await db.put('cardPurchases', toStoredCardPurchase(nevera({ id: 'p2' })));
+    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p), [nevera()])).toBe('changed');
+    await db.delete('cardPurchases', 'p2');
+    await db.delete('cardPurchases', 'p1');
+    expect(await store.writeCardPaymentEvent(0, p, movementsOf(p), [nevera()])).toBe('changed');
+    expect(await db.count('cardPayments')).toBe(0);
+    expect(await db.count('transactions')).toBe(0);
   });
 });

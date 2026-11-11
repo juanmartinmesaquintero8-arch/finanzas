@@ -50,6 +50,7 @@ import {
   type InstallmentView,
   type SettleInput,
 } from '@finanzas/ui';
+import { LegacyLockedError } from '@/data/idb-ledger-store';
 import { latestFeeMonths } from './card-payment-id';
 import { INT64_MAX, MAX_CARD_ID, MAX_CARD_PAYMENTS, MAX_CARD_PURCHASES, MAX_CREDIT_CARDS, MAX_TEXT } from './limits';
 import { AppError, CURRENCY, assertTextLength, isoDay, notFound, parseDay, parseMoney, toMessage, writeAction, type ServiceContext } from './support';
@@ -402,7 +403,7 @@ export class CardService {
       const feeStart = nextFeeStart(existing, feeOf(input), this.currentMonth(input.cutDay));
       const card = this.buildCard(id, input, feeStart, existing.feesSettledThrough);
       // El corte fija el interés de cada cuota: cambiarlo descuadraría lo ya repartido en los pagos únicos.
-      if (card.cutDay !== existing.cutDay && (await this.ctx.cardPayments.findByCard(id)).length > 0) throw new AppError(CUT_LOCKED);
+      if (card.cutDay !== existing.cutDay && (await this.ctx.cardPayments.countByCard(id)) > 0) throw new AppError(CUT_LOCKED);
       await this.assertAccount(input.paymentAccountId);
       await this.ctx.cards.save(card);
     });
@@ -486,7 +487,7 @@ export class CardService {
         interest,
         interestDescription: fitDescription(`Intereses ${purchase.description}`, suffix),
       });
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.markPaid(number), put);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.markPaid(number), put));
     });
   }
 
@@ -499,7 +500,7 @@ export class CardService {
       if (input.installment !== undefined && input.installment !== purchase.paidInstallments) return; // Segundo toque.
       if (purchase.paidInstallments === 0) throw new AppError('Esta compra no tiene pagos para deshacer.');
       const number = purchase.paidInstallments;
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.undoLastPayment(), [], [`cp-${purchase.id}-${number}`, `ci-${purchase.id}-${number}`]);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.undoLastPayment(), [], [`cp-${purchase.id}-${number}`, `ci-${purchase.id}-${number}`]));
     });
   }
 
@@ -521,7 +522,7 @@ export class CardService {
         interest: offer.interest,
         interestDescription: fitDescription(`Intereses liquidación ${purchase.description}`, ''),
       });
-      await this.ctx.ledger.writeCardPayment(purchase, purchase.close(paidOn), put);
+      await this.legacyWrite(() => this.ctx.ledger.writeCardPayment(purchase, purchase.close(paidOn), put));
     });
   }
 
@@ -551,7 +552,7 @@ export class CardService {
         description: fitDescription(`Manejo ${card.name}`, ` (${formatMonthLong(month)})`),
         category: INTEREST_CATEGORY,
       });
-      await this.ctx.ledger.writeFeePayment(card, CreditCard.create({ ...card.toProps(), feesSettledThrough: month }), payment);
+      await this.legacyWrite(() => this.ctx.ledger.writeFeePayment(card, CreditCard.create({ ...card.toProps(), feesSettledThrough: month }), payment));
     });
   }
 
@@ -569,7 +570,7 @@ export class CardService {
       if (latest === undefined) throw new AppError('Esta tarjeta no tiene pagos de manejo para deshacer.');
       const previous = previousMonth(latest);
       const feesSettledThrough = previous >= card.feeStartMonth ? previous : undefined;
-      await this.ctx.ledger.writeFeeUndo(card, CreditCard.create({ ...card.toProps(), feesSettledThrough }), `cf-${card.id}-${latest}`);
+      await this.legacyWrite(() => this.ctx.ledger.writeFeeUndo(card, CreditCard.create({ ...card.toProps(), feesSettledThrough }), `cf-${card.id}-${latest}`));
     });
   }
 
@@ -633,7 +634,7 @@ export class CardService {
         allocations: preview.allocations,
         transactionIds: movements.map((t) => t.id),
       });
-      if ((await this.ctx.ledger.writeCardPaymentEvent(lastSeq, payment, movements)) === 'changed') throw new AppError(CARD_CHANGED);
+      if ((await this.ctx.ledger.writeCardPaymentEvent(lastSeq, payment, movements, purchases)) === 'changed') throw new AppError(CARD_CHANGED);
     });
   }
 
@@ -694,7 +695,17 @@ export class CardService {
 
   /** Los pagos y deshacer del sistema anterior solo valen mientras la tarjeta no tenga pagos únicos. */
   private async assertLegacyAllowed(cardId: string): Promise<void> {
-    if ((await this.ctx.cardPayments.findByCard(cardId)).length > 0) throw new AppError(LEGACY_LOCKED);
+    if ((await this.ctx.cardPayments.countByCard(cardId)) > 0) throw new AppError(LEGACY_LOCKED);
+  }
+
+  /** Escritura del sistema anterior: si al guardar resulta que la tarjeta ya tiene pagos únicos, se avisa. */
+  private async legacyWrite(write: () => Promise<unknown>): Promise<void> {
+    try {
+      await write();
+    } catch (e) {
+      if (e instanceof LegacyLockedError) throw new AppError(LEGACY_LOCKED);
+      throw e;
+    }
   }
 
   private buildCard(id: string, input: CardInput, feeStartMonth: string, feesSettledThrough?: string): CreditCard {

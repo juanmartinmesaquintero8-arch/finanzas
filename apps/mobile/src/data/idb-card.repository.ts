@@ -73,4 +73,9 @@ export class IdbCardPaymentRepository implements CardPaymentRepository {
   count(): Promise<number> {
     return this.db.count('cardPayments');
   }
+
+  /** Cuántos pagos tiene la tarjeta, contando en el índice sin leer las filas. */
+  countByCard(cardId: string): Promise<number> {
+    return this.db.countFromIndex('cardPayments', 'by-card', cardPaymentRange(cardId));
+  }
 }

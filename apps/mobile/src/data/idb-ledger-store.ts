@@ -90,6 +90,27 @@ async function atomically(
   }
 }
 
+/** ¿Las compras guardadas son las mismas con las que se calculó el reparto (mismas, con las mismas cuotas pagadas y cierre)? */
+function samePurchases(expected: readonly CardPurchase[], rows: readonly StoredCardPurchase[]): boolean {
+  if (expected.length !== rows.length) return false;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return expected.every((p) => {
+    const row = byId.get(p.id);
+    return !!row && row.paidInstallments === p.paidInstallments && !!row.closedOn === p.isClosed && (row.closedOn ? row.closedOn === p.closedOn?.toISOString() : true);
+  });
+}
+
+/**
+ * Un pago o deshacer del sistema anterior no se guardó porque la tarjeta ya tiene pagos únicos
+ * (se detecta dentro de la misma escritura). No es lo mismo que "ya estaba hecho": hay que avisar.
+ */
+export class LegacyLockedError extends Error {
+  constructor() {
+    super('La tarjeta ya usa el pago único.');
+    this.name = 'LegacyLockedError';
+  }
+}
+
 /** Dentro de una transacción: ¿la tarjeta ya tiene algún pago único? (los pagos del sistema anterior ya no se mezclan). */
 async function hasCardPayments(tx: WriteTx, cardId: string): Promise<boolean> {
   return (await tx.objectStore('cardPayments').index('by-card').count(cardPaymentRange(cardId))) > 0;
@@ -130,7 +151,8 @@ export class IdbLedgerStore {
       const transactions = tx.objectStore('transactions');
       track(
         Promise.all([purchases.get(before.id), hasCardPayments(tx, before.cardId)]).then(([row, locked]) => {
-          if (locked || !row || row.paidInstallments !== before.paidInstallments || !!row.closedOn !== before.isClosed) return;
+          if (locked) throw new LegacyLockedError();
+          if (!row || row.paidInstallments !== before.paidInstallments || !!row.closedOn !== before.isClosed) return;
           for (const t of put) track(transactions.put(toStoredTransaction(t)));
           for (const id of remove) track(transactions.delete(id));
           track(purchases.put(toStoredCardPurchase(after)));
@@ -148,7 +170,8 @@ export class IdbLedgerStore {
       const cards = tx.objectStore('creditCards');
       track(
         Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
-          if (locked || !row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
+          if (locked) throw new LegacyLockedError();
+          if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').put(toStoredTransaction(payment)));
           track(cards.put(toStoredCreditCard(after)));
           applied = true;
@@ -165,7 +188,8 @@ export class IdbLedgerStore {
       const cards = tx.objectStore('creditCards');
       track(
         Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
-          if (locked || !row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
+          if (locked) throw new LegacyLockedError();
+          if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').delete(paymentId));
           track(cards.put(toStoredCreditCard(after)));
           applied = true;
@@ -178,21 +202,30 @@ export class IdbLedgerStore {
   /**
    * Pago único de una tarjeta: guarda el evento y sus movimientos en una sola transacción. Dentro de ella:
    * si ya existe un pago con ese id no escribe nada ("already", un doble toque); si el último orden de la
-   * tarjeta no es `expectedLastSeq` (otro pago o un deshacer se cruzó), tampoco ("changed").
+   * tarjeta no es `expectedLastSeq` (otro pago o un deshacer se cruzó), tampoco ("changed"). Tampoco si la
+   * tarjeta ya no existe o sus compras (cuáles son, cuotas pagadas, liquidadas) no son las `purchases` con
+   * las que se repartió el pago.
    */
-  async writeCardPaymentEvent(expectedLastSeq: number, payment: CardPayment, transactions: readonly Transaction[]): Promise<CardPaymentWrite> {
+  async writeCardPaymentEvent(
+    expectedLastSeq: number,
+    payment: CardPayment,
+    transactions: readonly Transaction[],
+    purchases: readonly CardPurchase[],
+  ): Promise<CardPaymentWrite> {
     if (payment.seq !== expectedLastSeq + 1) throw new Error('El orden del pago no sigue al último de la tarjeta.');
     let result: CardPaymentWrite = 'changed';
-    await atomically(this.db, ['transactions', 'cardPayments'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'cardPayments', 'creditCards', 'cardPurchases'], (tx, track) => {
       const payments = tx.objectStore('cardPayments');
       const lastOfCard = payments.index('by-card').openCursor(cardPaymentRange(payment.cardId), 'prev');
+      const card = tx.objectStore('creditCards').getKey(payment.cardId);
+      const rows = tx.objectStore('cardPurchases').index('by-card').getAll(payment.cardId);
       track(
-        Promise.all([payments.getKey(payment.id), lastOfCard]).then(([existing, last]) => {
+        Promise.all([payments.getKey(payment.id), lastOfCard, card, rows]).then(([existing, last, cardKey, current]) => {
           if (existing !== undefined) {
             result = 'already';
             return;
           }
-          if ((last?.value.seq ?? 0) !== expectedLastSeq) return;
+          if ((last?.value.seq ?? 0) !== expectedLastSeq || cardKey === undefined || !samePurchases(purchases, current)) return;
           // `add` (no `put`): si un movimiento ya existiera, falla y se cancela todo.
           for (const t of transactions) track(tx.objectStore('transactions').add(toStoredTransaction(t)));
           track(payments.add(toStoredCardPayment(payment)));

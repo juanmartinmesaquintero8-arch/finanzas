@@ -88,6 +88,7 @@ export interface CardPaymentRepository {
   /** Los pagos de la tarjeta en orden (`seq` ascendente). */
   findByCard(cardId: string): Promise<CardPayment[]>;
   count(): Promise<number>;
+  countByCard(cardId: string): Promise<number>;
 }
 
 export const ACCOUNT_REPOSITORY = Symbol('AccountRepository');
