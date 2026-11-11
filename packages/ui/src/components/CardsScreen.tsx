@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CardsApi } from '../lib/cards';
 import { formatDueDate, formatMoneyCompact, formatMonthLong } from '../lib/format';
 import type { Account, CardView, PurchaseView } from '../lib/types';
-import { ConfirmPanel, FeeAwareConfirmPanel, PayFeePanel, PayInstallmentPanel, SettlePanel } from './CardPanels';
+import { ConfirmPanel, FeeAwareConfirmPanel } from './CardPanels';
 import styles from './CreditCards.module.css';
 import ui from './ui.module.css';
 
@@ -13,6 +13,7 @@ import ui from './ui.module.css';
 const loading = () => <p className={ui.empty}>Cargando…</p>;
 const CardForm = dynamic(() => import('./CardForm').then((m) => m.CardForm), { loading });
 const PurchaseForm = dynamic(() => import('./PurchaseForm').then((m) => m.PurchaseForm), { loading });
+const CardPaymentForm = dynamic(() => import('./CardPaymentForm').then((m) => m.CardPaymentForm), { loading });
 
 interface Props {
   cards: CardView[];
@@ -26,7 +27,8 @@ type Mode =
   | { kind: 'newCard' }
   | { kind: 'editCard'; card: CardView }
   | { kind: 'addPurchase'; cardId: string }
-  | { kind: 'editPurchase'; purchase: PurchaseView };
+  | { kind: 'editPurchase'; purchase: PurchaseView }
+  | { kind: 'payCard'; card: CardView };
 
 /** Pantalla de tarjetas: una por tarjeta, y cada acción se confirma ahí mismo. Sólo presentación. */
 export function CardsScreen({ cards, accounts, today, api }: Props) {
@@ -54,6 +56,7 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
         {mode.kind === 'newCard' && <CardForm accounts={accounts} checkRate={(t, b) => api.checkRate(t, b)} onSubmit={(input) => api.createCard(input)} onDone={toList} onCancel={toList} />}
         {mode.kind === 'editCard' && <CardForm key={mode.card.id} card={mode.card} accounts={accounts} checkRate={(t, b) => api.checkRate(t, b)} checkImpact={(input) => api.cardChangeImpact(mode.card.id, input)} onSubmit={(input) => api.updateCard(mode.card.id, input)} onDone={toList} onCancel={toList} />}
         {mode.kind === 'addPurchase' && <PurchaseForm cards={cards} today={today} api={api} initialCardId={mode.cardId} onDone={toListWith} onCancel={toList} />}
+        {mode.kind === 'payCard' && <CardPaymentForm key={mode.card.id} card={mode.card} accounts={accounts} today={today} api={api} onDone={toListWith} onCancel={toList} />}
         {mode.kind === 'editPurchase' && <PurchaseForm key={mode.purchase.id} cards={cards} today={today} api={api} purchase={mode.purchase} onDone={toListWith} onCancel={toList} />}
       </div>
     );
@@ -83,6 +86,7 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
               accounts={accounts}
               today={today}
               api={api}
+              onPay={() => setMode({ kind: 'payCard', card })}
               onAddPurchase={() => setMode({ kind: 'addPurchase', cardId: card.id })}
               onEdit={() => setMode({ kind: 'editCard', card })}
               onEditPurchase={(purchase) => setMode({ kind: 'editPurchase', purchase })}
@@ -111,11 +115,12 @@ function nextLine(card: CardView, today: string): string {
   return `Próxima cuota ${formatMoneyCompact(card.next.amount)} el ${formatDueDate(card.next.date, today)}`;
 }
 
-function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onEditPurchase }: {
+function CreditCardItem({ card, today, api, onPay, onAddPurchase, onEdit, onEditPurchase }: {
   card: CardView;
   accounts: Account[];
   today: string;
   api: CardsApi;
+  onPay: () => void;
   onAddPurchase: () => void;
   onEdit: () => void;
   onEditPurchase: (purchase: PurchaseView) => void;
@@ -123,8 +128,9 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
   // Solo una acción abierta por tarjeta, así no se mezclan dos confirmaciones.
   const [panel, setPanel] = useState<string | null>(null);
   const close = () => setPanel(null);
-  const accountId = accounts.some((a) => a.id === card.paymentAccountId) ? card.paymentAccountId : '';
-  const payment = { accounts, accountId, today, onCancel: close, onDone: close };
+  // Con el primer pago único, los deshacer del sistema anterior dejan su lugar al de la tarjeta.
+  const last = card.lastCardPayment;
+  const payable = BigInt(card.debt) > 0n || card.pendingFees.length > 0;
 
   return (
     <li className={`${ui.card} ${styles.card}`}>
@@ -132,6 +138,7 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
         <h2 className={styles.name}>{card.name}</h2>
         <p className={styles.debt}>Debes en total {formatMoneyCompact(card.debt)}</p>
         <p className={styles.next}>{nextLine(card, today)}</p>
+        {BigInt(card.overdue) > 0n && <p className={`${styles.warning} ${styles.overdue}`}>Vencido {formatMoneyCompact(card.overdue)}</p>}
       </div>
       {card.cutDay === null && (
         <div className={styles.cutNotice}>
@@ -141,7 +148,12 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
           </button>
         </div>
       )}
-      <button type="button" className={ui.button} aria-label={`Agregar compra en ${card.name}`} onClick={onAddPurchase}>
+      {payable && (
+        <button type="button" className={ui.button} aria-label={`Pagar tarjeta ${card.name}`} onClick={onPay}>
+          Pagar tarjeta
+        </button>
+      )}
+      <button type="button" className={ui.buttonGhost} aria-label={`Agregar compra en ${card.name}`} onClick={onAddPurchase}>
         Agregar compra
       </button>
 
@@ -152,15 +164,11 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
               <div className={styles.rowTop}>
                 <span className={styles.desc}>{p.description}</span>
                 <span className={styles.count}>
-                  {p.paidInstallments}/{p.installments} cuotas
+                  {p.paidCount}/{p.installmentCount} cuotas
                 </span>
               </div>
               <p className={styles.meta}>{statusOf(p, today)}</p>
-              {panel === `pay:${p.id}` && p.next ? (
-                <PayInstallmentPanel {...payment} description={p.description} installment={p.next} onConfirm={(input) => api.payInstallment(p.id, input)} />
-              ) : panel === `settle:${p.id}` && p.settle ? (
-                <SettlePanel {...payment} description={p.description} offer={p.settle} onConfirm={(input) => api.settle(p.id, input)} />
-              ) : panel === `undo:${p.id}` ? (
+              {panel === `undo:${p.id}` ? (
                 <ConfirmPanel
                   label={`Deshacer último pago de ${p.description}`}
                   text="Esta cuota vuelve a quedar pendiente. Si la pagaste desde la app, el dinero vuelve a la cuenta; si la habías marcado como ya pagada, ningún saldo cambia."
@@ -181,19 +189,9 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
                 />
               ) : (
                 <div className={styles.actions}>
-                  {p.next && (
-                    <button type="button" className={ui.button} aria-label={`Pagar cuota: ${p.description}`} onClick={() => setPanel(`pay:${p.id}`)}>
-                      Pagar cuota
-                    </button>
-                  )}
-                  {p.paidInstallments > 0 && !p.closedOn && (
+                  {!last && p.paidInstallments > 0 && !p.closedOn && (
                     <button type="button" className={ui.buttonGhost} aria-label={`Deshacer último pago: ${p.description}`} onClick={() => setPanel(`undo:${p.id}`)}>
                       Deshacer último pago
-                    </button>
-                  )}
-                  {p.settle && (
-                    <button type="button" className={ui.buttonGhost} aria-label={`Liquidar: ${p.description}`} onClick={() => setPanel(`settle:${p.id}`)}>
-                      Liquidar
                     </button>
                   )}
                   <button type="button" className={ui.buttonGhost} aria-label={`Editar compra ${p.description}`} onClick={() => onEditPurchase(p)}>
@@ -215,7 +213,6 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
           <ul className={styles.rows}>
             {card.pendingFees.map((f) => {
               const month = formatMonthLong(f.month);
-              const label = `Pagar manejo de ${month}`;
               return (
                 <li key={f.month} className={styles.row}>
                   <div className={styles.rowTop}>
@@ -225,15 +222,6 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
                     <span className={styles.figure}>{formatMoneyCompact(f.amount)}</span>
                   </div>
                   <p className={styles.meta}>Vence el {formatDueDate(f.dueDate, today)}</p>
-                  {panel === `fee:${f.month}` ? (
-                    <PayFeePanel {...payment} label={label} amount={f.amount} onConfirm={(input) => api.payFee(card.id, f.month, input)} />
-                  ) : (
-                    <div className={styles.actions}>
-                      <button type="button" className={ui.buttonGhost} aria-label={label} onClick={() => setPanel(`fee:${f.month}`)}>
-                        Pagar
-                      </button>
-                    </div>
-                  )}
                 </li>
               );
             })}
@@ -241,7 +229,27 @@ function CreditCardItem({ card, accounts, today, api, onAddPurchase, onEdit, onE
         </div>
       )}
 
-      {card.lastPaidFeeMonth &&
+      {last &&
+        (panel === 'undo-card' ? (
+          <ConfirmPanel
+            label={`Deshacer último pago de la tarjeta ${card.name}`}
+            text={`Se borra el pago de ${formatMoneyCompact(last.total)} del ${formatDueDate(last.paidOn, today)} y su dinero vuelve a la cuenta. Las cuotas que cubrió vuelven a quedar pendientes.`}
+            confirmLabel="Sí, deshacer"
+            cancelLabel="Volver"
+            onConfirm={() => api.undoLastCardPayment(card.id, { paymentId: last.id })}
+            onDone={close}
+            onCancel={close}
+          />
+        ) : (
+          <div className={styles.actions}>
+            <button type="button" className={ui.buttonGhost} aria-label={`Deshacer último pago de la tarjeta ${card.name}`} onClick={() => setPanel('undo-card')}>
+              Deshacer último pago de la tarjeta
+            </button>
+          </div>
+        ))}
+
+      {!last &&
+        card.lastPaidFeeMonth &&
         (panel === 'undo-fee' ? (
           <ConfirmPanel
             label={`Deshacer último pago de manejo de ${card.name}`}

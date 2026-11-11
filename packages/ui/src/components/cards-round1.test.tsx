@@ -32,6 +32,7 @@ function api(over: Partial<CardsApi> = {}): CardsApi {
   const ok = () => vi.fn().mockResolvedValue({ ok: true });
   return {
     createCard: ok(), updateCard: ok(), removeCard: ok(), addPurchase: ok(), updatePurchase: ok(), removePurchase: ok(), payInstallment: ok(), undoLastPayment: ok(), settle: ok(), payFee: ok(), undoLastFee: ok(),
+    paymentShortcuts: vi.fn().mockResolvedValue({ ok: true, thisMonth: '0', max: '0' }), previewCardPayment: vi.fn().mockResolvedValue({ ok: false, error: 'sin desglose' }), payCard: ok(), undoLastCardPayment: ok(),
     checkRate: vi.fn(() => ({})),
     suggestFirstDueDate: vi.fn(() => '2026-12-15'),
     previewPurchase: vi.fn(() => ({ ok: true as const, preview })),
@@ -102,7 +103,8 @@ describe('I3, I5, M3, M4 en la lista', () => {
   it('M3: la fila del manejo dice el mes en palabras', () => {
     setup(card());
     expect(screen.getByText('Manejo Visa (noviembre 2026)')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Pagar manejo de noviembre 2026' })).toBeInTheDocument();
+    // Desde el pago único, el manejo se paga con «Pagar tarjeta»: la fila ya no tiene su propio botón.
+    expect(screen.queryByRole('button', { name: 'Pagar manejo de noviembre 2026' })).toBeNull();
   });
 
   it('M4: una cuota vencida lo dice; la que vence hoy no', () => {

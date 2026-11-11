@@ -1,8 +1,13 @@
 import type { ActionResult } from './action-result';
-import { formatDueDate, formatMoneyCompact, parseAmountInput } from './format';
+import { formatDueDate, formatMoneyCompact, monthName, parseAmountInput } from './format';
 import type {
   CardFeeKind,
   CardInput,
+  CardPaymentInput,
+  CardPaymentPreview,
+  CardPaymentPreviewInput,
+  CardPaymentPreviewResult,
+  CardPaymentShortcuts,
   CardView,
   FeeImpact,
   PayFeeInput,
@@ -30,6 +35,11 @@ export interface CardsApi {
   settle(id: string, input: SettleInput): Promise<ActionResult>;
   payFee(cardId: string, month: string, input: PayFeeInput): Promise<ActionResult>;
   undoLastFee(cardId: string, input?: { month?: string }): Promise<ActionResult>;
+  /** Pago único: atajos al día del pago, desglose sin escribir nada, registro y deshacer. */
+  paymentShortcuts(cardId: string, paidOn: string): Promise<CardPaymentShortcuts>;
+  previewCardPayment(cardId: string, input: CardPaymentPreviewInput): Promise<CardPaymentPreviewResult>;
+  payCard(cardId: string, input: CardPaymentInput): Promise<ActionResult>;
+  undoLastCardPayment(cardId: string, input?: { paymentId?: string }): Promise<ActionResult>;
   cardChangeImpact(cardId: string, input: CardInput): Promise<FeeImpact>;
   purchaseRemovalImpact(purchaseId: string): Promise<FeeImpact>;
   purchaseChangeImpact(purchaseId: string, input: PurchaseInput): Promise<FeeImpact>;
@@ -173,4 +183,25 @@ export function purchaseSummary(p: PurchasePreview, today: string): string {
   const totals = `Intereses en total: ${money(p.totalInterest)}. Total a pagar: ${money(p.totalToPay)}.`;
   if (p.totalCount === 1) return `Vas a pagar 1 cuota: ${at(first, today)}. ${totals}`;
   return `Vas a pagar ${p.totalCount} cuotas. La primera: ${at(first, today)}. La última: ${at(last, today)}. ${totals}`;
+}
+
+/** Identificador de un pago único, creado al abrir el formulario: repetirlo no registra el pago dos veces. */
+export function newPaymentId(): string {
+  const c = globalThis.crypto;
+  if (typeof c?.randomUUID === 'function') return c.randomUUID();
+  const bytes = c.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** 'mayo de 2027' a partir de '2027-05-15'. */
+export function monthAndYear(day: string): string {
+  return `${monthName(day.slice(0, 7))} de ${day.slice(0, 4)}`;
+}
+
+/**
+ * Cómo quedaría la compra que sigue debiendo después de la plata de más (la elegida, o la siguiente si
+ * la elegida queda pagada). null si con este pago no queda ninguna cuota: entonces no hay nada que elegir.
+ */
+export function extraOutcome(preview: CardPaymentPreview): CardPaymentPreview['outcomes'][number] | null {
+  return preview.outcomes.find((o) => o.SHORTEN.remainingInstallments > 0 && o.SHORTEN.endDate !== null) ?? null;
 }
