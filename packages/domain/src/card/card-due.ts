@@ -1,12 +1,13 @@
 import { Money } from '../money/money';
 import { Commitment } from '../projection/projection-engine';
 import { startOfDayUTC } from '../shared/date';
+import { assertDomain } from '../shared/domain-validation.error';
 import { dateInMonth } from './billing-cycle';
 import { CardPayment } from './card-payment';
 import { CardPurchase } from './card-purchase';
 import { cardFeesDue, monthInWords } from './card-commitments';
 import { CreditCard, YearMonth } from './credit-card';
-import { purchaseSchedule, ScheduledInstallment } from './purchase-schedule';
+import { computeSchedule, purchaseSchedule, ScheduledInstallment } from './purchase-schedule';
 
 /** Algo que se debe hoy en una tarjeta, ya sin lo pagado. */
 export interface DueItem {
@@ -149,7 +150,11 @@ export function maxPayment(card: CreditCard, purchases: readonly CardPurchase[],
   return Money.sum([...due, ...extra], due[0]?.currency ?? extra[0]?.currency ?? currency);
 }
 
-/** Deuda real de las tarjetas: capital pendiente con los pagos aplicados. Sin pagos es igual a `cardDebt`. */
+/**
+ * Deuda real de las tarjetas: capital pendiente con los pagos aplicados. Sin pagos es igual a `cardDebt`.
+ * Toda compra debe ser de una tarjeta de la lista: sin su corte, el capital pagado no se puede validar.
+ * El capital no depende del día de hoy, así que aquí no se pide.
+ */
 export function cardDebtWithPayments(
   cards: readonly CreditCard[],
   purchases: readonly CardPurchase[],
@@ -158,10 +163,11 @@ export function cardDebtWithPayments(
 ): Money {
   // El corte cambia el interés de cada cuota y con él la validación de lo pagado: siempre el de la tarjeta.
   const cutDays = new Map(cards.map((c) => [c.id, c.cutDay]));
+  for (const p of purchases) assertDomain(cutDays.has(p.cardId), `La compra «${p.description}» es de una tarjeta que no está en la lista.`);
   return Money.sum(
     purchases
       .filter((p) => !p.isClosed)
-      .map((p) => Money.of(pendingCapitalOf(purchaseSchedule(p, payments.filter((x) => x.cardId === p.cardId), cutDays.get(p.cardId))), p.amount.currency)),
+      .map((p) => Money.of(pendingCapitalOf(computeSchedule(p, payments.filter((x) => x.cardId === p.cardId), cutDays.get(p.cardId))), p.amount.currency)),
     purchases[0]?.amount.currency ?? currency,
   );
 }

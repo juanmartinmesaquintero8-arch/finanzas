@@ -6,7 +6,7 @@ import { cardCommitmentsWithPayments, cardDebtWithPayments, cardDue, maxPayment,
 import { CreditCard, CreditCardProps } from './credit-card';
 import { firstDueDateFor } from './installments';
 import { allocatePayment, paymentPreview } from './payment-allocation';
-import { purchaseSchedule } from './purchase-schedule';
+import { computeSchedule } from './purchase-schedule';
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`);
 const cop = (n: bigint | number) => Money.of(n, 'COP');
@@ -246,11 +246,11 @@ describe('propiedades del reparto (simulación con generador fijo)', () => {
         const allocations = allocatePayment(due, cop(amount), { purchases: balances });
         const hasExtra = allocations.some((a) => a.kind === 'EXTRA');
         const mode: ExtraMode | undefined = hasExtra ? pick<ExtraMode>(['SHORTEN', 'LOWER']) : undefined;
-        const before = new Map(purchases.map((p) => [p.id, purchaseSchedule(p, payments, cutDay)]));
+        const before = new Map(purchases.map((p) => [p.id, computeSchedule(p, payments, cutDay)]));
         // createCardPayment valida que la suma sea exacta y que nada vaya en cero.
         payments.push(createCardPayment({ id: `x${step}`, cardId: 'c1', seq: step + 1, paidOn: day, fromAccountId: 'a1', total: cop(amount), allocations, extraMode: mode, transactionIds: [] }));
         for (const p of purchases) {
-          const after = purchaseSchedule(p, payments, cutDay);
+          const after = computeSchedule(p, payments, cutDay);
           const old = new Map(before.get(p.id)!.map((r) => [r.number, r]));
           let paid = 0n;
           let prevFuture: bigint | undefined;
