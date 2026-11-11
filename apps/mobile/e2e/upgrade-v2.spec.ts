@@ -20,7 +20,9 @@ const PAYMENTS = [
   { id: 'ci-p1-2', type: 'EXPENSE', amount: '22000', currency: 'COP', date: '2026-03-15T00:00:00.000Z', description: 'Intereses Nevera (cuota 2/12)', category: 'Intereses y manejo', accountId: 'a1', fromAccountId: null, toAccountId: null, accountDates: ['a1|2026-03-15T00:00:00.000Z'] },
   { id: 'cf-c1-2026-02', type: 'EXPENSE', amount: '18000', currency: 'COP', date: '2026-03-15T00:00:00.000Z', description: 'Manejo Visa (febrero 2026)', category: 'Intereses y manejo', accountId: 'a1', fromAccountId: null, toAccountId: null, accountDates: ['a1|2026-03-15T00:00:00.000Z'] },
 ];
-const SEED = { account: ACCOUNT, card: CARD, purchase: PURCHASE, payments: PAYMENTS };
+const SCHEDULED = { id: 's1', description: 'Arriendo', amount: '900000', currency: 'COP', accountId: 'a1', frequency: 'MONTHLY', startDate: '2026-04-05T00:00:00.000Z', endDate: null, settledThrough: null, category: 'Vivienda' };
+const INCOME = { id: 'i1', description: 'Sueldo', amount: '2500000', currency: 'COP', accountId: 'a1', frequency: 'MONTHLY', startDate: '2026-04-30T00:00:00.000Z', endDate: null, settledThrough: null, category: 'Salario' };
+const SEED = { account: ACCOUNT, card: CARD, purchase: PURCHASE, payments: PAYMENTS, scheduled: SCHEDULED, income: INCOME };
 
 async function seedV2(page: Page): Promise<void> {
   await page.evaluate(
@@ -42,10 +44,12 @@ async function seedV2(page: Page): Promise<void> {
         };
         req.onsuccess = () => {
           const db = req.result;
-          const t = db.transaction(['accounts', 'transactions', 'creditCards', 'cardPurchases', 'meta'], 'readwrite');
+          const t = db.transaction(['accounts', 'transactions', 'creditCards', 'cardPurchases', 'scheduledExpenses', 'scheduledIncomes', 'meta'], 'readwrite');
           t.objectStore('accounts').put(seed.account);
           t.objectStore('creditCards').put(seed.card);
           t.objectStore('cardPurchases').put(seed.purchase);
+          t.objectStore('scheduledExpenses').put(seed.scheduled);
+          t.objectStore('scheduledIncomes').put(seed.income);
           for (const p of seed.payments) t.objectStore('transactions').put(p);
           t.objectStore('meta').put({ key: 'lastBackupAt', value: '2026-03-01T00:00:00.000Z' });
           t.oncomplete = () => {
@@ -63,7 +67,7 @@ async function seedV2(page: Page): Promise<void> {
 async function dump(page: Page) {
   return page.evaluate(
     () =>
-      new Promise<{ version: number; stores: string[]; rows: Record<string, unknown[]>; paymentIndex: { keyPath: unknown; unique: boolean } }>(
+      new Promise<{ version: number; stores: string[]; rows: Record<string, unknown[]>; indexes: Record<string, string[]>; paymentIndex: { keyPath: unknown; unique: boolean } }>(
         (resolve, reject) => {
           const req = indexedDB.open('mis-finanzas');
           req.onerror = () => reject(req.error);
@@ -72,7 +76,9 @@ async function dump(page: Page) {
             const stores = [...db.objectStoreNames].sort();
             const t = db.transaction(stores, 'readonly');
             const rows: Record<string, unknown[]> = {};
+            const indexes: Record<string, string[]> = {};
             for (const s of stores) {
+              indexes[s] = [...t.objectStore(s).indexNames].sort();
               const all = t.objectStore(s).getAll();
               all.onsuccess = () => (rows[s] = all.result);
             }
@@ -80,7 +86,7 @@ async function dump(page: Page) {
             const paymentIndex = { keyPath: index.keyPath, unique: index.unique };
             t.oncomplete = () => {
               db.close();
-              resolve({ version: db.version, stores, rows, paymentIndex });
+              resolve({ version: db.version, stores, rows, indexes, paymentIndex });
             };
             t.onerror = () => reject(t.error);
           };
@@ -98,7 +104,13 @@ async function expectIntact(page: Page): Promise<void> {
   expect(info.rows['cardPurchases']).toEqual([PURCHASE]);
   expect(info.rows['transactions']).toEqual([...PAYMENTS].sort((a, b) => a.id.localeCompare(b.id)));
   expect(info.rows['meta']).toEqual([{ key: 'lastBackupAt', value: '2026-03-01T00:00:00.000Z' }]);
+  expect(info.rows['scheduledExpenses']).toEqual([SCHEDULED]);
+  expect(info.rows['scheduledIncomes']).toEqual([INCOME]);
   expect(info.rows['cardPayments']).toEqual([]);
+  expect(info.indexes).toEqual({
+    accounts: [], cardPayments: ['by-card'], cardPurchases: ['by-card'], creditCards: [], meta: [],
+    scheduledExpenses: ['by-account'], scheduledIncomes: ['by-account'], transactions: ['by-account-date', 'by-date'],
+  });
   expect(info.paymentIndex).toEqual({ keyPath: ['cardId', 'seq'], unique: true });
 }
 
