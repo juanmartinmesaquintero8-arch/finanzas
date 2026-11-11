@@ -73,5 +73,5 @@ export function generateSampleData(now: Date): LedgerSnapshot {
 
 export const isSampleId = (id: string): boolean => id.startsWith(SAMPLE_PREFIX);
 
-/** Pago hecho a una compra o tarjeta de ejemplo: `cp-demo-…`, `ci-demo-…`, `cf-demo-…`. */
-export const isSampleCardPaymentId = (id: string): boolean => /^(cp|ci|cf)-/.test(id) && isSampleId(id.slice(3));
+/** Pago hecho a una compra o tarjeta de ejemplo, o parte de un pago de ejemplo: `cp-demo-…`, `ci-demo-…`, `cf-demo-…`, `pt-demo-…`. */
+export const isSampleCardPaymentId = (id: string): boolean => /^(cp|ci|cf|pt)-/.test(id) && isSampleId(id.slice(3));

@@ -30,6 +30,9 @@ export class DataService {
       const keep = (row: { id: string }, ...refs: string[]) => ![row.id, ...refs].some(isSampleId);
       const keptCards = extras.creditCards.filter((c) => keep(c, c.paymentAccountId));
       const keptCardIds = new Set(keptCards.map((c) => c.id));
+      // Un pago es de ejemplo si su id o su tarjeta lo es; también se va si se pagó desde una cuenta de ejemplo
+      // (sus movimientos se van con esa cuenta) o si su tarjeta se quita.
+      const keptPayments = extras.cardPayments.filter((p) => keep(p, p.cardId, p.fromAccountId) && keptCardIds.has(p.cardId));
       await this.ctx.ledger.replaceAll(
         {
           accounts: all.accounts.filter((a) => !isSampleId(a.id)),
@@ -40,12 +43,13 @@ export class DataService {
         {
           creditCards: keptCards,
           cardPurchases: extras.cardPurchases.filter((p) => !isSampleId(p.id) && keptCardIds.has(p.cardId)),
+          cardPayments: keptPayments,
         },
       );
     });
   }
 
-  /** Borra todo: cuentas, movimientos, gastos e ingresos programados, tarjetas y compras. */
+  /** Borra todo: cuentas, movimientos, gastos e ingresos programados, tarjetas, compras y pagos de tarjeta. */
   eraseAll(): Promise<ActionResult> {
     return writeAction(this.ctx, () => this.ctx.ledger.clearAll());
   }

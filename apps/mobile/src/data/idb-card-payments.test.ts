@@ -232,3 +232,28 @@ describe('pagos de tarjeta en las operaciones de todo el libro', () => {
     expect(await db.count('cardPayments')).toBe(0);
   });
 });
+
+describe('escrituras del sistema anterior con pagos nuevos en la tarjeta', () => {
+  it('no escriben nada si la tarjeta ya tiene un pago nuevo (aunque se crucen con él)', async () => {
+    const { CardPurchase, CreditCard } = await import('@finanzas/domain');
+    const store = new IdbLedgerStore(db);
+    const p = payment('x1', 1);
+    await store.writeCardPaymentEvent(0, p, movementsOf(p));
+    const visa = CreditCard.create({ id: 'c1', name: 'Visa', dueDay: 15, paymentAccountId: 'a1', fee: { kind: 'FIXED_MONTHLY', amount: cop(18_000) }, feeStartMonth: '2026-03' });
+    await db.put('creditCards', (await import('./mappers')).toStoredCreditCard(visa));
+    const nevera = CardPurchase.create({
+      id: 'p1', cardId: 'c1', description: 'Nevera', amount: cop(1_200), installments: 12, purchaseDate: day('2026-03-02'), firstDueDate: day('2026-04-15'), monthlyRatePpm: 0, paidInstallments: 0,
+    });
+    await db.put('cardPurchases', (await import('./mappers')).toStoredCardPurchase(nevera));
+    const paidVisa = CreditCard.create({ ...visa.toProps(), feesSettledThrough: '2026-03' });
+
+    expect(await store.writeCardPayment(nevera, nevera.markPaid(1), [movement('cp-p1-1')])).toBe(false);
+    expect(await store.writeFeePayment(visa, paidVisa, movement('cf-c1-2026-03'))).toBe(false);
+    expect((await db.get('creditCards', 'c1'))!.feesSettledThrough).toBeNull();
+    await db.put('creditCards', (await import('./mappers')).toStoredCreditCard(paidVisa));
+    expect(await store.writeFeeUndo(paidVisa, visa, 'pt-x1-01')).toBe(false);
+    expect((await db.get('cardPurchases', 'p1'))!.paidInstallments).toBe(0);
+    expect((await db.get('creditCards', 'c1'))!.feesSettledThrough).toBe('2026-03');
+    expect((await db.getAll('transactions')).map((t) => t.id)).toEqual(['pt-x1-01', 'pt-x1-02']);
+  });
+});

@@ -1,6 +1,6 @@
 import type { FinanzasDb } from '@/data/database';
 import { IdbAccountRepository } from '@/data/idb-account.repository';
-import { IdbCardPurchaseRepository, IdbCreditCardRepository } from '@/data/idb-card.repository';
+import { IdbCardPaymentRepository, IdbCardPurchaseRepository, IdbCreditCardRepository } from '@/data/idb-card.repository';
 import { IdbLedgerStore } from '@/data/idb-ledger-store';
 import { IdbScheduledExpenseRepository } from '@/data/idb-scheduled-expense.repository';
 import { IdbScheduledIncomeRepository } from '@/data/idb-scheduled-income.repository';
@@ -49,6 +49,7 @@ export function createServices({ db, now = () => new Date(), newId = () => crypt
     scheduledIncomes: new IdbScheduledIncomeRepository(db),
     cards: new IdbCreditCardRepository(db),
     purchases: new IdbCardPurchaseRepository(db),
+    cardPayments: new IdbCardPaymentRepository(db),
     ledger: new IdbLedgerStore(db),
     bus,
     now,

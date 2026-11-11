@@ -1,10 +1,11 @@
 import {
   BalanceCalculator,
   ProjectionEngine,
-  cardCommitments,
+  cardCommitmentsWithPayments,
   startOfDayUTC,
   type Account,
   type BalanceSnapshot,
+  type CardPayment,
   type CardPurchase,
   type CreditCard,
   type ScheduledExpense,
@@ -20,6 +21,7 @@ interface Base {
   incomes: ScheduledIncome[];
   cards: CreditCard[];
   purchases: CardPurchase[];
+  cardPayments: CardPayment[];
 }
 
 /**
@@ -59,22 +61,24 @@ export class SummaryService {
 
   private loadBase(): Promise<Base> {
     this.base ??= (async () => {
-      const [accounts, deltas, scheduled, incomes, cards, purchases] = await Promise.all([
+      const [accounts, deltas, scheduled, incomes, cards, purchases, cardPayments] = await Promise.all([
         this.ctx.accounts.findAll(),
         this.ctx.transactions.balanceDeltas(),
         this.ctx.scheduled.findAll(),
         this.ctx.scheduledIncomes.findAll(),
         this.ctx.cards.findAll(),
         this.ctx.purchases.findAll(),
+        this.ctx.cardPayments.findAll(),
       ]);
-      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled, incomes, cards, purchases };
+      return { accounts, snapshot: this.calculator.fromTotals(accounts, deltas), scheduled, incomes, cards, purchases, cardPayments };
     })();
     return this.base;
   }
 
   private async compute(from: Date, to: Date): Promise<ProjectionWithIncome> {
-    const { accounts, snapshot, scheduled, incomes, cards, purchases } = await this.loadBase();
-    const extraCommitments = cardCommitments(cards, purchases, from, to);
+    const { accounts, snapshot, scheduled, incomes, cards, purchases, cardPayments } = await this.loadBase();
+    // Con los pagos únicos: de cada cuota y manejo solo resta lo que falta. Sin pagos es idéntico a lo de antes.
+    const extraCommitments = cardCommitmentsWithPayments(cards, purchases, cardPayments, from, to);
     const projection = this.engine.project({ snapshot, scheduledExpenses: scheduled, scheduledIncomes: incomes, extraCommitments, from: startOfDayUTC(from), to });
     const names = new Map(accounts.map((a) => [a.id, a.name]));
     return {

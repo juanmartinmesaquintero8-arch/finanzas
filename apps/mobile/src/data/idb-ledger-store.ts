@@ -90,6 +90,11 @@ async function atomically(
   }
 }
 
+/** Dentro de una transacción: ¿la tarjeta ya tiene algún pago único? (los pagos del sistema anterior ya no se mezclan). */
+async function hasCardPayments(tx: WriteTx, cardId: string): Promise<boolean> {
+  return (await tx.objectStore('cardPayments').index('by-card').count(cardPaymentRange(cardId))) > 0;
+}
+
 /**
  * Operaciones que tocan varias tablas a la vez: liquidar un gasto programado,
  * restaurar o borrar todo. Cada una es todo o nada.
@@ -116,16 +121,16 @@ export class IdbLedgerStore {
   /**
    * Pago de tarjeta (cuota, deshacer o liquidar) en una sola escritura: guarda los movimientos, borra los
    * indicados y actualiza la compra. Dentro de la misma transacción comprueba que la compra siga como se
-   * leyó: si otro toque ya la cambió, no escribe nada y devuelve false.
+   * leyó y que la tarjeta no tenga pagos únicos: si no, no escribe nada y devuelve false.
    */
   async writeCardPayment(before: CardPurchase, after: CardPurchase, put: readonly Transaction[], remove: readonly string[] = []): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'cardPurchases'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'cardPurchases', 'cardPayments'], (tx, track) => {
       const purchases = tx.objectStore('cardPurchases');
       const transactions = tx.objectStore('transactions');
       track(
-        purchases.get(before.id).then((row) => {
-          if (!row || row.paidInstallments !== before.paidInstallments || !!row.closedOn !== before.isClosed) return;
+        Promise.all([purchases.get(before.id), hasCardPayments(tx, before.cardId)]).then(([row, locked]) => {
+          if (locked || !row || row.paidInstallments !== before.paidInstallments || !!row.closedOn !== before.isClosed) return;
           for (const t of put) track(transactions.put(toStoredTransaction(t)));
           for (const id of remove) track(transactions.delete(id));
           track(purchases.put(toStoredCardPurchase(after)));
@@ -136,14 +141,14 @@ export class IdbLedgerStore {
     return applied;
   }
 
-  /** Pago de cuota de manejo: guarda el gasto y el mes pagado juntos; si la tarjeta ya cambió, no escribe nada. */
+  /** Pago de cuota de manejo: guarda el gasto y el mes pagado juntos; si la tarjeta cambió o ya tiene pagos únicos, no escribe nada. */
   async writeFeePayment(before: CreditCard, after: CreditCard, payment: Transaction): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'creditCards'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'creditCards', 'cardPayments'], (tx, track) => {
       const cards = tx.objectStore('creditCards');
       track(
-        cards.get(before.id).then((row) => {
-          if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
+        Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
+          if (locked || !row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').put(toStoredTransaction(payment)));
           track(cards.put(toStoredCreditCard(after)));
           applied = true;
@@ -153,14 +158,14 @@ export class IdbLedgerStore {
     return applied;
   }
 
-  /** Deshace un pago de manejo: borra el gasto y retrocede el mes pagado juntos; si la tarjeta ya cambió, no escribe nada. */
+  /** Deshace un pago de manejo: borra el gasto y retrocede el mes pagado juntos; si la tarjeta cambió o ya tiene pagos únicos, no escribe nada. */
   async writeFeeUndo(before: CreditCard, after: CreditCard, paymentId: string): Promise<boolean> {
     let applied = false;
-    await atomically(this.db, ['transactions', 'creditCards'], (tx, track) => {
+    await atomically(this.db, ['transactions', 'creditCards', 'cardPayments'], (tx, track) => {
       const cards = tx.objectStore('creditCards');
       track(
-        cards.get(before.id).then((row) => {
-          if (!row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
+        Promise.all([cards.get(before.id), hasCardPayments(tx, before.id)]).then(([row, locked]) => {
+          if (locked || !row || (row.feesSettledThrough ?? undefined) !== before.feesSettledThrough) return;
           track(tx.objectStore('transactions').delete(paymentId));
           track(cards.put(toStoredCreditCard(after)));
           applied = true;

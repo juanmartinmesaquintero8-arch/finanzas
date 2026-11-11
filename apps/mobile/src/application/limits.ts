@@ -13,5 +13,7 @@ export const MAX_IMPORT_TEXT = 2000;
 /** Topes que garantizan que una copia hecha por la app se pueda recuperar. */
 export const MAX_CREDIT_CARDS = 100;
 export const MAX_CARD_PURCHASES = 5000;
+/** Pagos de tarjeta (eventos) que una copia puede recuperar. */
+export const MAX_CARD_PAYMENTS = 20_000;
 /** Largo máximo del id de tarjeta o de compra: `cp-<compra>-liq` y `cf-<tarjeta>-AAAA-MM` deben caber en un id válido. */
 export const MAX_CARD_ID = 80;
