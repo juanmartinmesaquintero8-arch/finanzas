@@ -395,3 +395,20 @@ describe('editar una tarjeta con pagos nuevos', () => {
     expect(await s.cards.updateCard(cardId, { ...card, paymentAccountId: accountId, cutDay: 30 })).toEqual({ ok: true });
   });
 });
+
+describe('quitar datos de ejemplo no deja un historial de pagos a medias', () => {
+  it('si una tarjeta propia tiene pagos desde una cuenta de ejemplo, no quita nada y lo dice', async () => {
+    const { cardId } = await setup();
+    await db.put('accounts', { id: `${SAMPLE_PREFIX}banco`, name: 'Banco de ejemplo', type: 'BANK', initialBalance: '5000000', currency: 'COP' });
+    expect(await s.cards.payCard(cardId, input({ amount: '124000', fromAccountId: `${SAMPLE_PREFIX}banco` }))).toEqual({ ok: true });
+    expect(await s.cards.payCard(cardId, input({ paymentId: 'pago-2', amount: '200000', mode: 'SHORTEN' }))).toEqual({ ok: true });
+    const before = { payments: await db.count('cardPayments'), rows: await db.count('transactions'), accounts: await db.count('accounts') };
+
+    expect(await s.data.removeSample()).toEqual({
+      ok: false,
+      error: 'Antes de quitar los datos de ejemplo, deshaz los pagos de la tarjeta «Visa» hechos desde una cuenta de ejemplo.',
+    });
+    expect({ payments: await db.count('cardPayments'), rows: await db.count('transactions'), accounts: await db.count('accounts') }).toEqual(before);
+    expect((await s.cards.list())[0]!.debt).toBe('900000');
+  });
+});
