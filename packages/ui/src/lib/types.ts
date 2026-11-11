@@ -310,13 +310,16 @@ export interface CardPaymentPreview {
   /** Lo más que se puede pagar ese día. */
   max: string;
   fees: { month: string; amount: string }[];
-  purchases: { purchaseId: string; description: string; interest: string; capital: string; extraCapital: string }[];
+  /** `paidOff`: con este pago la compra queda pagada por completo. */
+  purchases: { purchaseId: string; description: string; interest: string; capital: string; extraCapital: string; paidOff: boolean }[];
   extraCapital: string;
   /** Hay plata de más: hay que elegir terminar antes o bajar la cuota. */
   needsMode: boolean;
   outcomes: { purchaseId: string; SHORTEN: CardPaymentOutcomeView; LOWER: CardPaymentOutcomeView }[];
   /** Lo vencido que queda sin pagar después de este pago. */
   pending: string;
+  /** Lo del periodo que este pago no cubre y su fecha; null si cubre todo lo del periodo. */
+  dueSoon: { amount: string; dueDate: string } | null;
   /** Compra que recibe primero la plata de más; null si no hay plata de más. */
   extraPurchaseId: string | null;
   /** Compras que pueden recibir plata de más, en el orden sugerido (primero la de mayor interés). */

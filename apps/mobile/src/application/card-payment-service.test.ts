@@ -207,7 +207,7 @@ describe('previewCardPayment', () => {
         total: '324000',
         max: '1224000',
         fees: [],
-        purchases: [{ purchaseId, description: 'Nevera', interest: '24000', capital: '100000', extraCapital: '200000' }],
+        purchases: [{ purchaseId, description: 'Nevera', interest: '24000', capital: '100000', extraCapital: '200000', paidOff: false }],
         extraCapital: '200000',
         needsMode: true,
         outcomes: [
@@ -218,6 +218,7 @@ describe('previewCardPayment', () => {
           },
         ],
         pending: '0',
+        dueSoon: null,
         extraPurchaseId: purchaseId,
         extraTargets: [{ purchaseId, description: 'Nevera' }],
         signature: `324000|2026-04-15|I:${purchaseId}:1:24000:100000|E:${purchaseId}:200000`,

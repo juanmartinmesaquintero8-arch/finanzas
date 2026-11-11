@@ -15,6 +15,8 @@ let now = new Date('2026-03-10T15:00:00Z');
 
 const APRIL_15 = new Date('2026-04-15T17:00:00Z');
 const MAY_10 = new Date('2026-05-10T17:00:00Z');
+const APRIL_10 = new Date('2026-04-10T17:00:00Z');
+const OTHER_VALUES = 'Ya registraste un pago con otros valores. Cierra el formulario y revisa el historial de la tarjeta.';
 const CARD_CHANGED = 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.';
 
 beforeEach(async () => {
@@ -32,8 +34,8 @@ afterEach(async () => {
 });
 
 /** Visa 2 % MV, pago el 15. «Nevera» 1.200.000 a 12 cuotas: la 1 vale 100.000 + 24.000 el 15 de abril. */
-async function setup() {
-  await s.cards.createCard({ name: 'Visa', dueDay: 15, paymentAccountId: accountId, feeKind: 'NONE', rateBasis: 'MV', rateText: '2' });
+async function setup(over: Record<string, unknown> = {}) {
+  await s.cards.createCard({ name: 'Visa', dueDay: 15, paymentAccountId: accountId, feeKind: 'NONE', rateBasis: 'MV', rateText: '2', ...over });
   const cardId = (await s.cards.list())[0]!.id;
   await s.cards.addPurchase({ cardId, description: 'Nevera', amount: '1200000', installments: 12, purchaseDate: '2026-03-02', firstDueDate: '2026-04-15', category: 'Hogar' });
   const purchaseId = (await db.getAll('cardPurchases'))[0]!.id;
@@ -153,5 +155,84 @@ describe('la lista con pagos nuevos', () => {
     const { cardId } = await setup();
     expect(await s.cards.payCard(cardId, { ...pay({ amount: '324000', mode: 'SHORTEN' }), paymentId: 'pago-1' })).toEqual({ ok: true });
     expect((await cardView()).purchases[0]).toMatchObject({ paidCount: 1, installmentCount: 10 });
+  });
+});
+
+describe('manejo pagado con «Pagar tarjeta»', () => {
+  it('un manejo pagado del todo deja de estar pendiente; uno pagado en parte muestra lo que falta', async () => {
+    const { cardId } = await setup({ feeKind: 'FIXED_MONTHLY', feeAmount: '18000' });
+    const before = (await cardView()).pendingFees;
+    expect(before[0]).toMatchObject({ month: '2026-03', amount: '18000' });
+    // En la misma fecha el manejo va primero: 10.000 quedan en él.
+    expect(await s.cards.payCard(cardId, { ...pay({ amount: '10000' }), paymentId: 'pago-1' })).toEqual({ ok: true });
+    expect((await cardView()).pendingFees[0]).toMatchObject({ month: '2026-03', amount: '8000' });
+    expect(await s.cards.payCard(cardId, { ...pay({ amount: '8000' }), paymentId: 'pago-2' })).toEqual({ ok: true });
+    expect((await cardView()).pendingFees.map((f) => f.month)).not.toContain('2026-03');
+  });
+});
+
+describe('lo que queda por pagar después del pago', () => {
+  it('A: debe 124.000 que vencen el 15 y paga 50.000 el 10: faltan 74.000 que vencen el 15', async () => {
+    const { cardId } = await setup();
+    now = APRIL_10;
+    const result = await s.cards.previewCardPayment(cardId, pay({ amount: '50000', paidOn: '2026-04-10' }));
+    expect(result.ok && { pending: result.preview.pending, dueSoon: result.preview.dueSoon }).toEqual({ pending: '0', dueSoon: { amount: '74000', dueDate: '2026-04-15' } });
+  });
+
+  it('B: 124.000 vencidos y 122.000 que vencen el 15; paga 100.000: quedan 24.000 vencidos y faltan 122.000', async () => {
+    const { cardId } = await setup();
+    now = MAY_10;
+    const result = await s.cards.previewCardPayment(cardId, pay({ amount: '100000', paidOn: '2026-05-10' }));
+    expect(result.ok && { pending: result.preview.pending, dueSoon: result.preview.dueSoon }).toEqual({ pending: '24000', dueSoon: { amount: '122000', dueDate: '2026-05-15' } });
+  });
+
+  it('pago exacto: no queda nada', async () => {
+    const { cardId } = await setup();
+    const result = await s.cards.previewCardPayment(cardId, pay({ amount: '124000' }));
+    expect(result.ok && { pending: result.preview.pending, dueSoon: result.preview.dueSoon }).toEqual({ pending: '0', dueSoon: null });
+  });
+
+  it('marca la compra que queda pagada', async () => {
+    const { cardId } = await setup();
+    const result = await s.cards.previewCardPayment(cardId, pay({ amount: '1224000' }));
+    expect(result.ok && result.preview.purchases.map((p) => p.paidOff)).toEqual([true]);
+    const partial = await s.cards.previewCardPayment(cardId, pay({ amount: '124000' }));
+    expect(partial.ok && partial.preview.purchases.map((p) => p.paidOff)).toEqual([false]);
+  });
+});
+
+describe('el mismo pago con otros valores', () => {
+  it('repetir el pago con la misma firma no hace nada más; con otra firma o monto avisa sin guardar', async () => {
+    const { cardId } = await setup();
+    const shown = await s.cards.previewCardPayment(cardId, pay({ amount: '124000' }));
+    if (!shown.ok) throw new Error(shown.error);
+    const first = { ...pay({ amount: '124000' }), paymentId: 'pago-1', expected: shown.preview.signature };
+    expect(await s.cards.payCard(cardId, first)).toEqual({ ok: true });
+    expect(await s.cards.payCard(cardId, first)).toEqual({ ok: true });
+    expect(await s.cards.payCard(cardId, { ...first, amount: '100000', expected: 'otra' })).toEqual({ ok: false, error: OTHER_VALUES });
+    expect(await s.cards.payCard(cardId, { ...first, amount: '100000', expected: undefined })).toEqual({ ok: false, error: OTHER_VALUES });
+    expect(await db.count('cardPayments')).toBe(1);
+  });
+});
+
+describe('borrar una compra que recibió plata de un pago nuevo', () => {
+  it('la deuda, lo vencido y los atajos se calculan sin fallar, y deshacer el pago devuelve los saldos', async () => {
+    const { cardId, purchaseId } = await setup();
+    await addSofa(cardId);
+    const balance = async () => (await s.summary.projection('2026-04-15')).netWorth.amount;
+    const start = await balance();
+    expect(await s.cards.payCard(cardId, { ...pay({ amount: '624000', mode: 'SHORTEN' }), paymentId: 'pago-1' })).toEqual({ ok: true });
+    expect(await s.cards.removePurchase(purchaseId)).toEqual({ ok: true });
+
+    const card = await cardView();
+    expect(card.purchases.map((p) => p.description)).toEqual(['Sofá']);
+    expect(card.overdue).toBe('0');
+    expect((await s.cards.debtSummary()).debt).toBe('500000');
+    expect((await s.cards.paymentShortcuts(cardId, '2026-04-15')).ok).toBe(true);
+
+    expect(await s.cards.undoLastCardPayment(cardId, { paymentId: 'pago-1' })).toEqual({ ok: true });
+    expect(await balance()).toBe(start);
+    expect((await s.cards.debtSummary()).debt).toBe('600000');
+    expect((await cardView()).lastCardPayment).toBeNull();
   });
 });

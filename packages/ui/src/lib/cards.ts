@@ -53,6 +53,9 @@ export interface CardsApi {
   ): PurchasePreviewResult;
 }
 
+/** Lo que dice el servicio si el reparto cambió entre el desglose y la confirmación. */
+export const CARD_CHANGED = 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.';
+
 const MAX_INSTALLMENTS = 72;
 const RATE_ZERO = 'La tasa debe ser mayor que 0. Si no cobra intereses, elige "Sin intereses".';
 const WHOLE = /^\d+$/;

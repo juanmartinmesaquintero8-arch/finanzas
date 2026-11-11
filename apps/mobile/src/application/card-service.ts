@@ -12,6 +12,7 @@ import {
   purchaseBalances,
   purchaseSchedule,
   type Allocation,
+  type DueItem,
   createCardPayment,
   maxPayment,
   paymentPreview,
@@ -42,6 +43,7 @@ import {
   type CardPaymentPreviewInput,
   type CardPaymentPreviewResult,
   type CardPaymentShortcuts,
+  CARD_CHANGED,
   type CardView,
   type FeeImpact,
   type PayFeeInput,
@@ -77,7 +79,7 @@ const LATE_PURCHASE = 'Esa compra es de un mes con manejo ya pagado, así que no
 /** Los pagos y deshacer por compra o por manejo no se mezclan con el pago único de la tarjeta. */
 const LEGACY_LOCKED = 'Esta tarjeta ya usa el pago único. Para corregir, usa «Deshacer último pago de la tarjeta».';
 const BAD_PAYMENT_ID = 'No pudimos registrar el pago. Cierra el formulario y ábrelo de nuevo.';
-const CARD_CHANGED = 'La tarjeta cambió mientras registrabas el pago. Revisa el desglose e inténtalo de nuevo.';
+const OTHER_VALUES = 'Ya registraste un pago con otros valores. Cierra el formulario y revisa el historial de la tarjeta.';
 const NOTHING_TO_UNDO = 'Esta tarjeta no tiene pagos para deshacer.';
 const CUT_LOCKED = 'Esta tarjeta ya tiene pagos con el pago único. Para cambiar el día de corte, primero deshazlos con «Deshacer último pago de la tarjeta».';
 /** El id del pago lo crea el cliente; con él, `pt-<id>-<nn>` siempre cabe en un id válido de movimiento. */
@@ -236,6 +238,31 @@ function purchaseFields(p: CardPurchase): Omit<PurchaseView, 'next' | 'settle' |
   };
 }
 
+/** Cuotas de manejo hasta `horizon` con lo que aún falta de cada una (lo pagado con pagos únicos se descuenta). */
+function feesStillOwed(card: CreditCard, purchases: readonly CardPurchase[], payments: readonly CardPayment[], horizon: Date): CardView['pendingFees'] {
+  const paid = new Map<string, bigint>();
+  for (const p of payments) for (const a of p.allocations) if (a.kind === 'FEE') paid.set(a.month, (paid.get(a.month) ?? 0n) + a.amount.amount);
+  return cardFeesDue(card, purchases, BEGINNING, horizon)
+    .map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: (f.amount.amount - (paid.get(f.month) ?? 0n)).toString() }))
+    .filter((f) => BigInt(f.amount) > 0n);
+}
+
+/** Lo del periodo (aún no vencido) que el pago no cubre, y la fecha de lo primero que queda sin cubrir. */
+function dueSoonAfter(due: readonly DueItem[], afterOverdue: bigint): CardPaymentPreview['dueSoon'] {
+  let rest = afterOverdue;
+  let left = 0n;
+  let date: Date | null = null;
+  for (const item of due.filter((i) => !i.overdue)) {
+    const covered = item.amount.amount < rest ? item.amount.amount : rest;
+    rest -= covered;
+    if (covered < item.amount.amount) {
+      left += item.amount.amount - covered;
+      date ??= item.dueDate;
+    }
+  }
+  return date ? { amount: left.toString(), dueDate: isoDay(date) } : null;
+}
+
 /** Firma estable de un reparto: si cambia algo de lo que se mostró, cambia la firma. */
 function signatureOf(total: Money, paidOn: Date, allocations: readonly Allocation[]): string {
   const parts = allocations.map((a) =>
@@ -312,7 +339,7 @@ export class CardService {
       debt: cardDebtWithPayments([card], own, payments, CURRENCY).amount.toString(),
       next: nextDue(views),
       purchases: views,
-      pendingFees: cardFeesDue(card, purchases, BEGINNING, horizon).map((f) => ({ month: f.month, dueDate: isoDay(f.dueDate), amount: f.amount.amount.toString() })),
+      pendingFees: feesStillOwed(card, purchases, ownPayments, horizon),
       lastPaidFeeMonth,
       overdue: Money.sum(overdue.map((i) => i.amount), CURRENCY).amount.toString(),
       lastCardPayment: last ? { id: last.id, total: last.total.amount.toString(), paidOn: isoDay(last.paidOn) } : null,
@@ -629,7 +656,9 @@ export class CardService {
       const [purchases, payments] = await this.cardState(card.id);
       const { amount, paidOn, preview } = this.planPayment(card, purchases, payments, input);
       const names = new Map(purchases.map((p) => [p.id, p.description]));
-      const overdue = cardDue(card, purchases, payments, paidOn).filter((i) => i.overdue).reduce((sum, i) => sum + i.amount.amount, 0n);
+      const due = cardDue(card, purchases, payments, paidOn);
+      const overdue = due.filter((i) => i.overdue).reduce((sum, i) => sum + i.amount.amount, 0n);
+      const pendingCapital = new Map(purchaseBalances(card, purchases, payments, paidOn).map((b) => [b.purchase.id, b.pendingCapital.amount]));
       const firstExtra = preview.allocations.find((a) => a.kind === 'EXTRA');
       // Mismo orden que sugiere el dominio para la plata de más: mayor tasa, luego la compra más antigua.
       const targets = purchaseBalances(card, purchases, payments, paidOn)
@@ -651,12 +680,15 @@ export class CardService {
           interest: p.interest.amount.toString(),
           capital: p.capital.amount.toString(),
           extraCapital: p.extraCapital.amount.toString(),
+          // Todo su capital pendiente queda cubierto: lo debido va antes que el capital, así que no queda nada.
+          paidOff: p.capital.amount + p.extraCapital.amount === pendingCapital.get(p.purchaseId),
         })),
         extraCapital: preview.extraCapital.amount.toString(),
         needsMode: preview.extraCapital.isPositive(),
         outcomes: preview.outcomes.map((o) => ({ purchaseId: o.purchaseId, SHORTEN: outcomeView(o.SHORTEN), LOWER: outcomeView(o.LOWER) })),
         // Lo vencido se reparte antes que todo lo demás: lo que el pago no alcanza a cubrir sigue vencido.
         pending: (overdue > amount.amount ? overdue - amount.amount : 0n).toString(),
+        dueSoon: dueSoonAfter(due, amount.amount > overdue ? amount.amount - overdue : 0n),
         extraPurchaseId: firstExtra?.kind === 'EXTRA' ? firstExtra.purchaseId : null,
         extraTargets: firstExtra ? targets.map((p) => ({ purchaseId: p.id, description: p.description })) : [],
         signature: signatureOf(amount, paidOn, preview.allocations),
@@ -675,7 +707,17 @@ export class CardService {
     return writeAction(this.ctx, async () => {
       const card = await this.requireCard(cardId);
       if (typeof input.paymentId !== 'string' || !PAYMENT_ID.test(input.paymentId)) throw new AppError(BAD_PAYMENT_ID);
-      if (await this.ctx.cardPayments.findById(input.paymentId)) return; // Segundo toque.
+      const existing = await this.ctx.cardPayments.findById(input.paymentId);
+      if (existing) {
+        // Segundo toque: si es el mismo pago no se hace nada; si trae otros valores, se avisa.
+        const same =
+          existing.cardId === card.id &&
+          existing.total.amount.toString() === String(input.amount).trim() &&
+          isoDay(existing.paidOn) === input.paidOn &&
+          (input.expected === undefined || input.expected === signatureOf(existing.total, existing.paidOn, existing.allocations));
+        if (!same) throw new AppError(OTHER_VALUES);
+        return;
+      }
       if ((await this.ctx.cardPayments.count()) >= MAX_CARD_PAYMENTS) {
         throw new AppError(`Llegaste al máximo de ${MAX_CARD_PAYMENTS.toLocaleString('es-CO')} pagos de tarjeta.`);
       }

@@ -60,11 +60,12 @@ const preview = (over: Partial<CardPaymentPreview> = {}): CardPaymentPreview => 
   total: '136000',
   max: '936000',
   fees: [{ month: '2026-10', amount: '18000' }],
-  purchases: [{ purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '0' }],
+  purchases: [{ purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '0', paidOff: false }],
   extraCapital: '0',
   needsMode: false,
   outcomes: [],
   pending: '0',
+  dueSoon: null,
   extraPurchaseId: null,
   extraTargets: [],
   signature: 'firma-exacta',
@@ -78,10 +79,10 @@ function extraPreview(input: CardPaymentPreviewInput): CardPaymentPreview {
     total: '336000',
     purchases: toSofa
       ? [
-          { purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '0' },
-          { purchaseId: 'p2', description: 'Sofá', interest: '0', capital: '0', extraCapital: '200000' },
+          { purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '0', paidOff: false },
+          { purchaseId: 'p2', description: 'Sofá', interest: '0', capital: '0', extraCapital: '200000', paidOff: false },
         ]
-      : [{ purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '200000' }],
+      : [{ purchaseId: 'p1', description: 'Nevera', interest: '18000', capital: '100000', extraCapital: '200000', paidOff: false }],
     extraCapital: '200000',
     needsMode: true,
     outcomes: [
