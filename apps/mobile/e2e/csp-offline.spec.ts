@@ -147,7 +147,9 @@ test('sin conexión, Programados vuelve a abrir con el selector y la vista de in
   await expectNoViolations(page, consoleErrors);
 });
 
-test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violaciones de CSP', async ({ page, context }) => {
+test('tarjetas: crea tarjeta y compra, paga parcial, paga con plata de más y deshace, sin conexión y sin violaciones de CSP', async ({ page, context }) => {
+  // Día fijo en Colombia: así la cuota 1 de la compra (15 de abril) ya está vencida y los montos son exactos.
+  await page.clock.setFixedTime(new Date('2026-04-20T12:00:00-05:00'));
   const consoleErrors = await watchViolations(page);
   await page.goto('./');
   await page.getByRole('button', { name: 'Ver con datos de ejemplo' }).click();
@@ -161,10 +163,11 @@ test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violac
   await context.setOffline(true);
   await page.reload();
 
+  // 1) Tarjeta y compra.
   await page.getByRole('button', { name: 'Agregar tarjeta' }).click();
   await page.getByLabel('Nombre').fill('Mi Visa');
   await page.getByLabel('Día en que pagas').fill('15');
-  await page.getByLabel('Día de corte').fill('5');
+  await page.getByLabel('Día de corte').fill('30');
   await page.getByRole('radio', { name: 'Bancolombia' }).click();
   await page.getByRole('radio', { name: 'Con intereses' }).click();
   await page.getByLabel('Tasa', { exact: true }).fill('2');
@@ -175,19 +178,47 @@ test('tarjetas: crea tarjeta, compra y pago, también sin conexión y sin violac
   await page.getByLabel('Qué compraste').fill('Nevera');
   await page.getByLabel('Monto').fill('1200000');
   await page.getByRole('radio', { name: '12', exact: true }).click();
+  await page.getByLabel('Fecha de la compra').fill('2026-03-02');
+  await expect(page.getByLabel('Primera cuota')).toHaveValue('2026-04-15');
   await page.getByRole('button', { name: 'Continuar' }).click();
-  await expect(page.getByText(/^Vas a pagar 12 cuotas\. La primera: \$124\.000 el .*Intereses en total: \$156\.000\. Total a pagar: \$1\.356\.000\.$/)).toBeVisible();
+  await expect(page.getByText(/^Vas a pagar 12 cuotas\. La primera: \$124\.000 el 15 abr\..*Total a pagar: \$1\.356\.000\.$/)).toBeVisible();
   await page.getByRole('button', { name: 'Sí, guardar la compra' }).click();
-
   await expect(card.getByText('Debes en total $1.200.000')).toBeVisible();
-  await card.getByRole('button', { name: 'Pagar cuota: Nevera' }).click();
-  await card.getByRole('button', { name: 'Confirmar pago' }).click();
-  await expect(card.getByText('Debes en total $1.100.000')).toBeVisible();
-  await expect(card.getByText('1/12 cuotas')).toBeVisible();
+  await expect(card.getByText('Vencido $124.000')).toBeVisible();
+
+  // 2) Pago parcial: lo que falta sigue vencido.
+  await card.getByRole('button', { name: 'Pagar tarjeta Mi Visa' }).click();
+  await expect(page.getByRole('button', { name: 'Lo de este mes $124.000' })).toBeVisible();
+  await page.getByLabel('¿Cuánto pagaste?').fill('100000');
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await expect(page.getByRole('heading', { name: 'Así se reparte tu pago de $100.000' })).toBeVisible();
+  await expect(page.getByText('Queda pendiente $24.000. Lo que falte sigue vencido y el interés del próximo mes sube un poco.')).toBeVisible();
+  await page.getByRole('button', { name: 'Sí, registrar el pago' }).click();
+  await expect(page.getByText('Pago registrado.')).toBeVisible();
+  await expect(card.getByText('Vencido $24.000')).toBeVisible();
+
+  // 3) Pago con plata de más: se pregunta y queda «Terminar antes».
+  await card.getByRole('button', { name: 'Pagar tarjeta Mi Visa' }).click();
+  await page.getByLabel('¿Cuánto pagaste?').fill('500000');
+  await page.getByRole('button', { name: 'Continuar' }).click();
+  await expect(page.getByRole('heading', { name: 'Así se reparte tu pago de $500.000' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: /^Te sobran \$[\d.]+\. ¿Qué quieres hacer con esa plata\?$/ })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Terminar antes' })).toBeChecked();
+  await page.getByRole('button', { name: 'Sí, registrar el pago' }).click();
+  await expect(page.getByText('Pago registrado.')).toBeVisible();
+  await expect(card.getByText(/^Vencido/)).toHaveCount(0);
+
+  // 4) Deshacer el último pago: vuelve lo vencido de antes.
+  await card.getByRole('button', { name: 'Deshacer último pago de la tarjeta Mi Visa' }).click();
+  await expect(card.getByText('Se borra el pago de $500.000 del 20 abr y su dinero vuelve a la cuenta. Las cuotas que cubrió vuelven a quedar pendientes.')).toBeVisible();
+  await card.getByRole('button', { name: 'Sí, deshacer' }).click();
+  await expect(card.getByText('Vencido $24.000')).toBeVisible();
 
   // Lo pagado sigue ahí al volver a abrir, todavía sin conexión.
   await page.reload();
-  await expect(page.locator('li', { has: page.getByRole('heading', { name: 'Mi Visa' }) }).getByText('1/12 cuotas')).toBeVisible();
+  const reopened = page.locator('li', { has: page.getByRole('heading', { name: 'Mi Visa' }) });
+  await expect(reopened.getByText('Vencido $24.000')).toBeVisible();
+  await expect(reopened.getByRole('button', { name: 'Deshacer último pago de la tarjeta Mi Visa' })).toBeVisible();
   expect(await page.evaluate(() => window.__cspViolations)).toEqual([]);
   expect(consoleErrors).toEqual([]);
 });
