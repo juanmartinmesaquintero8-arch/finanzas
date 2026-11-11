@@ -45,8 +45,8 @@ const err = (text: string) => {
 };
 
 describe('copia v4: día de corte', () => {
-  it('la versión es 4', () => {
-    expect(BACKUP_VERSION).toBe(4);
+  it('la versión actual es la 5', () => {
+    expect(BACKUP_VERSION).toBe(5);
   });
 
   it('ida y vuelta con y sin corte', async () => {
@@ -57,7 +57,7 @@ describe('copia v4: día de corte', () => {
     const { text, problem } = await s.backup.create();
     expect(problem).toBeNull();
     const saved = JSON.parse(text);
-    expect(saved.version).toBe(4);
+    expect(saved.version).toBe(5);
     expect(saved.creditCards.map((c: { name: string; cutDay: number | null }) => [c.name, c.cutDay]).sort()).toEqual([
       ['Con corte', 10],
       ['Sin corte', null],
@@ -115,6 +115,6 @@ describe('copia v4: día de corte', () => {
   });
 
   it('un archivo más nuevo sigue dando el aviso', () => {
-    expect(err(file(5))).toBe(NEWER);
+    expect(err(file(6))).toBe(NEWER);
   });
 });
