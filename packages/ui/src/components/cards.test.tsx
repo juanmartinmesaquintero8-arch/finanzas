@@ -44,7 +44,6 @@ const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   paidCount: 3,
   installmentCount: 12,
   next: installment(4, '2026-12-15', '118000', '100000', '18000'),
-  settle: { capital: '900000', interest: '18000', total: '918000' },
   ...over,
 });
 
@@ -79,10 +78,7 @@ function api(over: Partial<CardsApi> = {}): CardsApi {
     addPurchase: ok(),
     updatePurchase: ok(),
     removePurchase: ok(),
-    payInstallment: ok(),
     undoLastPayment: ok(),
-    settle: ok(),
-    payFee: ok(),
     undoLastFee: ok(),
     paymentShortcuts: vi.fn().mockResolvedValue({ ok: true, thisMonth: '0', max: '0' }), previewCardPayment: vi.fn().mockResolvedValue({ ok: false, error: 'sin desglose' }), payCard: ok(), undoLastCardPayment: ok(),
     cardChangeImpact: vi.fn().mockResolvedValue({ lostCount: 0, lostAmount: '0', changedCount: 0 }),
@@ -407,14 +403,14 @@ describe('CardsScreen', () => {
     expect(screen.getByText('Debes en total $900.000')).toBeInTheDocument();
     expect(screen.getByText('Próxima cuota $118.000 el 15 dic')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Agregar compra en Visa Bancolombia' })).toBeInTheDocument();
-    expect(screen.getByText('3/12 cuotas')).toBeInTheDocument();
+    expect(screen.getByText('Pagadas 3 · faltan 9')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pagar tarjeta Visa Bancolombia' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Deshacer último pago: Nevera' })).toBeInTheDocument();
     expect(screen.getByText('Manejo Visa Bancolombia (noviembre 2026)')).toBeInTheDocument();
   });
 
   it('una compra sin pagos no ofrece deshacer; una cerrada no ofrece pagar', () => {
-    setup([card({ purchases: [purchase({ paidInstallments: 0 }), purchase({ id: 'p2', description: 'Sofá', closedOn: '2026-10-01', next: null, settle: null })] })]);
+    setup([card({ purchases: [purchase({ paidInstallments: 0 }), purchase({ id: 'p2', description: 'Sofá', closedOn: '2026-10-01', next: null })] })]);
     expect(screen.queryByRole('button', { name: 'Deshacer último pago: Nevera' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Pagar cuota: Sofá' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Deshacer último pago: Sofá' })).toBeNull();

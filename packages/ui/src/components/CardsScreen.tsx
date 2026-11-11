@@ -83,7 +83,6 @@ export function CardsScreen({ cards, accounts, today, api }: Props) {
             <CreditCardItem
               key={card.id}
               card={card}
-              accounts={accounts}
               today={today}
               api={api}
               onPay={() => setMode({ kind: 'payCard', card })}
@@ -117,7 +116,6 @@ function nextLine(card: CardView, today: string): string {
 
 function CreditCardItem({ card, today, api, onPay, onAddPurchase, onEdit, onEditPurchase }: {
   card: CardView;
-  accounts: Account[];
   today: string;
   api: CardsApi;
   onPay: () => void;
@@ -164,7 +162,7 @@ function CreditCardItem({ card, today, api, onPay, onAddPurchase, onEdit, onEdit
               <div className={styles.rowTop}>
                 <span className={styles.desc}>{p.description}</span>
                 <span className={styles.count}>
-                  {p.paidCount}/{p.installmentCount} cuotas
+                  Pagadas {p.paidCount} · faltan {p.installmentCount - p.paidCount}
                 </span>
               </div>
               <p className={styles.meta}>{statusOf(p, today)}</p>

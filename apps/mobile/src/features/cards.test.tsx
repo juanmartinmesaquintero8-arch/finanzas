@@ -66,7 +66,7 @@ describe('Programados: Tarjetas', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sí, registrar el pago' }));
     expect(await screen.findByText('Pago registrado.')).toBeInTheDocument();
     expect(await screen.findByText('Debes en total $1.100.000')).toBeInTheDocument();
-    expect(screen.getByText('0/11 cuotas')).toBeInTheDocument();
+    expect(screen.getByText('Pagadas 0 · faltan 11')).toBeInTheDocument();
     expect((await services.transactions.page({})).items).toHaveLength(1);
     expect((await services.summary.projection('2026-03-31')).netWorth.amount).toBe('4900000');
   });

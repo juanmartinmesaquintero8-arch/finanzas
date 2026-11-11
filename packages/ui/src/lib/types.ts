@@ -181,8 +181,6 @@ export interface PurchaseView {
   /** Cuotas ya pagadas por completo y cuotas que tiene hoy (terminar antes las reduce). */
   paidCount: number;
   installmentCount: number;
-  /** Lo que costaría liquidarla hoy; null si ya no se debe nada. */
-  settle: { capital: string; interest: string; total: string } | null;
 }
 
 export interface PendingFeeView {

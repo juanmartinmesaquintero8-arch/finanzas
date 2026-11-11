@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { extraOutcome, monthAndYear, newPaymentId, type CardsApi } from '../lib/cards';
-import { formatGroupedDigits, formatMoneyCompact, formatMonthLong, parseAmountInput } from '../lib/format';
+import { CARD_CHANGED, extraOutcome, monthAndYear, newPaymentId, type CardsApi } from '../lib/cards';
+import { formatDueDate, formatGroupedDigits, formatMoneyCompact, formatMonthLong, parseAmountInput } from '../lib/format';
 import type { Account, CardPaymentPreview, CardPaymentPreviewInput, CardPaymentPreviewResult, CardView, ExtraMode } from '../lib/types';
 import { useSubmit } from '../lib/use-submit';
 import { ChipGroup } from './ChipGroup';
@@ -44,7 +44,11 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
   const [review, setReview] = useState<Review | null>(null);
   const [mode, setMode] = useState<ExtraMode>('SHORTEN');
   const [refreshing, setRefreshing] = useState(false);
+  // Cada cálculo lleva un turno: una respuesta que llega tarde (de un destino viejo o tras «Corregir») se descarta.
   const latest = useRef(0);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const backToForm = useRef(false);
+  const errorId = useId();
   const { pending, error, submit } = useSubmit((notice) => {
     setPaymentId(newPaymentId());
     onDone(notice ?? PAID);
@@ -64,6 +68,14 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
     };
   }, [api, card.id, paidOn]);
 
+  // Al volver del desglose, se sigue escribiendo en el monto.
+  useEffect(() => {
+    if (review === null && backToForm.current) {
+      backToForm.current = false;
+      amountRef.current?.focus();
+    }
+  }, [review]);
+
   const preview = (input: CardPaymentPreviewInput) => api.previewCardPayment(card.id, input).catch(() => FAILED);
 
   async function handleContinue(e: FormEvent) {
@@ -74,8 +86,10 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
       return;
     }
     const input: CardPaymentPreviewInput = { amount: parseAmountInput(amountText) ?? '0', paidOn, fromAccountId: accountId };
+    const ticket = ++latest.current;
     setChecking(true);
     const result = await preview(input);
+    if (ticket !== latest.current) return;
     setChecking(false);
     if (!result.ok) {
       setFormError(result.error);
@@ -101,11 +115,35 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
     setReview({ input, preview: result.preview });
   }
 
+  /** Si la tarjeta cambió, se muestra el desglose nuevo (con el aviso) en lugar del viejo. */
+  async function recalculate(input: CardPaymentPreviewInput) {
+    const ticket = ++latest.current;
+    const result = await preview(input);
+    if (ticket !== latest.current) return;
+    if (result.ok) setReview({ input, preview: result.preview });
+    else {
+      setFormError(result.error);
+      setReview(null);
+    }
+  }
+
   function confirm() {
     if (!review) return;
     const { input, preview: shown } = review;
     const extra = shown.needsMode && shown.extraPurchaseId ? { extraPurchaseId: shown.extraPurchaseId, mode } : {};
-    void submit(() => api.payCard(card.id, { amount: input.amount, paidOn: input.paidOn, fromAccountId: input.fromAccountId, ...extra, paymentId, expected: shown.signature }));
+    void submit(async () => {
+      const result = await api.payCard(card.id, { amount: input.amount, paidOn: input.paidOn, fromAccountId: input.fromAccountId, ...extra, paymentId, expected: shown.signature });
+      if (!result.ok && result.error === CARD_CHANGED) await recalculate(input);
+      return result;
+    });
+  }
+
+  function back() {
+    latest.current++;
+    setRefreshing(false);
+    setFormError(null);
+    backToForm.current = true;
+    setReview(null);
   }
 
   function cancel() {
@@ -117,6 +155,7 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
     return (
       <Breakdown
         preview={review.preview}
+        today={today}
         mode={mode}
         onMode={setMode}
         onTarget={(id) => void chooseTarget(id)}
@@ -124,10 +163,7 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
         pending={pending}
         error={error ?? formError}
         onConfirm={confirm}
-        onBack={() => {
-          setFormError(null);
-          setReview(null);
-        }}
+        onBack={back}
       />
     );
   }
@@ -144,7 +180,18 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
         <label className={ui.label} htmlFor="cpay-amount">
           ¿Cuánto pagaste?
         </label>
-        <input id="cpay-amount" className={ui.input} inputMode="numeric" autoComplete="off" placeholder="$ 0" value={amountText} onChange={(e) => setAmountText(formatGroupedDigits(e.target.value))} />
+        <input
+          ref={amountRef}
+          id="cpay-amount"
+          className={ui.input}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="$ 0"
+          value={amountText}
+          aria-invalid={formError ? 'true' : undefined}
+          aria-describedby={formError ? errorId : undefined}
+          onChange={(e) => setAmountText(formatGroupedDigits(e.target.value))}
+        />
         {(thisMonth || max) && (
           <div className={`${ui.chips} ${styles.shortcuts}`}>
             {thisMonth && <Shortcut label="Lo de este mes" amount={thisMonth} onPick={setAmountText} />}
@@ -160,7 +207,7 @@ export function CardPaymentForm({ card, accounts, today, api, onDone, onCancel }
         <input id="cpay-date" type="date" className={ui.input} max={today} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
       </div>
       {formError && (
-        <p role="alert" className={ui.alert}>
+        <p id={errorId} role="alert" className={ui.alert}>
           {formError}
         </p>
       )}
@@ -183,8 +230,15 @@ function Shortcut({ label, amount, onPick }: { label: string; amount: string; on
   );
 }
 
-function Breakdown({ preview, mode, onMode, onTarget, busy, pending, error, onConfirm, onBack }: {
+/** Ayuda de «Terminar antes»: nombra la compra que sigue debiendo y dice si su fecha final cambia. */
+function shortenHelp(name: string, outcome: NonNullable<ReturnType<typeof extraOutcome>>): string {
+  if (outcome.SHORTEN.endDate === outcome.LOWER.endDate) return `${name} termina en la misma fecha, con una última cuota más pequeña.`;
+  return `Pagas las mismas cuotas, pero ${name} termina en ${monthAndYear(outcome.SHORTEN.endDate!)}. Te ahorras más intereses.`;
+}
+
+function Breakdown({ preview, today, mode, onMode, onTarget, busy, pending, error, onConfirm, onBack }: {
   preview: CardPaymentPreview;
+  today: string;
   mode: ExtraMode;
   onMode: (mode: ExtraMode) => void;
   onTarget: (purchaseId: string) => void;
@@ -196,10 +250,14 @@ function Breakdown({ preview, mode, onMode, onTarget, busy, pending, error, onCo
 }) {
   const titleId = useId();
   const questionId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Quien usa lector de pantalla oye primero el total del desglose.
+  useEffect(() => heading.current?.focus(), []);
   const outcome = preview.needsMode ? extraOutcome(preview) : null;
+  const nameOf = (purchaseId: string) => preview.purchases.find((p) => p.purchaseId === purchaseId)?.description ?? preview.extraTargets.find((t) => t.purchaseId === purchaseId)?.description ?? '';
   return (
     <section className={`${ui.card} ${ui.stack} ${styles.tall}`} aria-labelledby={titleId}>
-      <h2 id={titleId} className={styles.reviewTitle}>
+      <h2 id={titleId} ref={heading} tabIndex={-1} className={styles.reviewTitle}>
         Así se reparte tu pago de {money(preview.total)}
       </h2>
       <ul className={styles.previewList}>
@@ -211,22 +269,22 @@ function Breakdown({ preview, mode, onMode, onTarget, busy, pending, error, onCo
         {preview.purchases.map((p) => (
           <li key={p.purchaseId} className={styles.splitRow}>
             <strong>{p.description}:</strong> {money(BigInt(p.capital) + BigInt(p.extraCapital))} de capital y {money(p.interest)} de intereses
+            {p.paidOff && `. ${p.description} queda pagada.`}
           </li>
         ))}
       </ul>
-      {BigInt(preview.pending) > 0n && <p className={styles.warning}>Queda pendiente {money(preview.pending)}. Lo que falte sigue vencido y el interés del próximo mes sube un poco.</p>}
+      {BigInt(preview.pending) > 0n && <p className={styles.warning}>Queda vencido {money(preview.pending)}. Sigue vencido y el interés del próximo mes sube un poco.</p>}
+      {preview.dueSoon && (
+        <p className={styles.warning}>
+          Te faltan {money(preview.dueSoon.amount)} que vencen el {formatDueDate(preview.dueSoon.dueDate, today)}. Si no los pagas antes, quedan vencidos y el interés del próximo mes sube un poco.
+        </p>
+      )}
       {outcome && (
         <div role="radiogroup" aria-labelledby={questionId} className={styles.choices}>
           <p id={questionId} className={styles.question}>
             Te sobran {money(preview.extraCapital)}. ¿Qué quieres hacer con esa plata?
           </p>
-          <Choice
-            value="SHORTEN"
-            title="Terminar antes"
-            help={`Pagas las mismas cuotas, pero terminas en ${monthAndYear(outcome.SHORTEN.endDate!)}. Te ahorras más intereses.`}
-            mode={mode}
-            onMode={onMode}
-          />
+          <Choice value="SHORTEN" title="Terminar antes" help={shortenHelp(nameOf(outcome.purchaseId), outcome)} mode={mode} onMode={onMode} />
           <Choice value="LOWER" title="Bajar la cuota" help={`Terminas en la misma fecha y la próxima cuota baja a ${money(outcome.LOWER.nextInstallment)}.`} mode={mode} onMode={onMode} />
         </div>
       )}

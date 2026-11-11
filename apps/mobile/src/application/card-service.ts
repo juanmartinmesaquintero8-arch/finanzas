@@ -199,7 +199,7 @@ const isOpen = (p: CardPurchase): boolean => !p.isClosed && p.paidInstallments <
 function toPurchaseView(p: CardPurchase, card: CreditCard, payments: readonly CardPayment[], today: Date): PurchaseView {
   if (payments.length === 0 || p.isClosed) {
     const next = isOpen(p) ? buildInstallmentPlan(p)[p.paidInstallments]! : null;
-    return { ...purchaseFields(p), paidCount: p.paidInstallments, installmentCount: p.installments, next: next && toInstallmentView(next), settle: settleOf(p) };
+    return { ...purchaseFields(p), paidCount: p.paidInstallments, installmentCount: p.installments, next: next && toInstallmentView(next) };
   }
   const schedule = purchaseSchedule(p, payments, card.cutDay, today);
   const row = schedule.find((r) => r.remaining.isPositive());
@@ -213,15 +213,10 @@ function toPurchaseView(p: CardPurchase, card: CreditCard, payments: readonly Ca
       }
     : null;
   const paidCount = schedule.filter((r) => !r.remaining.isPositive()).length;
-  return { ...purchaseFields(p), paidCount, installmentCount: schedule.length, next, settle: null };
+  return { ...purchaseFields(p), paidCount, installmentCount: schedule.length, next };
 }
 
-function settleOf(p: CardPurchase): PurchaseView['settle'] {
-  const offer = isOpen(p) ? settleOffer(p) : null;
-  return offer && { capital: offer.capital.amount.toString(), interest: offer.interest.amount.toString(), total: offer.total.amount.toString() };
-}
-
-function purchaseFields(p: CardPurchase): Omit<PurchaseView, 'next' | 'settle' | 'paidCount' | 'installmentCount'> {
+function purchaseFields(p: CardPurchase): Omit<PurchaseView, 'next' | 'paidCount' | 'installmentCount'> {
   return {
     id: p.id,
     cardId: p.cardId,

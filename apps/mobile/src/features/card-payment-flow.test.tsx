@@ -45,7 +45,9 @@ describe('Pagar tarjeta de punta a punta', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Continuar' }));
     expect(await screen.findByRole('heading', { name: 'Así se reparte tu pago de $100.000' })).toBeInTheDocument();
     expect(screen.getByText((_, el) => el?.tagName === 'LI' && el.textContent === 'Nevera: $76.000 de capital y $24.000 de intereses')).toBeInTheDocument();
-    expect(screen.getByText('Queda pendiente $24.000. Lo que falte sigue vencido y el interés del próximo mes sube un poco.')).toBeInTheDocument();
+    expect(screen.getByText('Queda vencido $24.000. Sigue vencido y el interés del próximo mes sube un poco.')).toBeInTheDocument();
+    // La cuota 2 ya se facturó (su corte fue el 15 de abril) y vence el 15 de mayo: el pago no la alcanza.
+    expect(screen.getByText('Te faltan $122.000 que vencen el 15 may. Si no los pagas antes, quedan vencidos y el interés del próximo mes sube un poco.')).toBeInTheDocument();
     expect(screen.queryByText(/^Te sobran/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Sí, registrar el pago' }));
     expect(await screen.findByText('Pago registrado.')).toBeInTheDocument();
@@ -64,7 +66,7 @@ describe('Pagar tarjeta de punta a punta', () => {
     expect(screen.getByRole('radiogroup', { name: /^Te sobran \$\d{1,3}(\.\d{3})*\. ¿Qué quieres hacer con esa plata\?$/ })).toBeInTheDocument();
     const shorten = screen.getByRole('radio', { name: 'Terminar antes' });
     expect(shorten).toBeChecked();
-    expect(shorten).toHaveAccessibleDescription(/^Pagas las mismas cuotas, pero terminas en [a-z]+ de \d{4}\. Te ahorras más intereses\.$/);
+    expect(shorten).toHaveAccessibleDescription(/^Pagas las mismas cuotas, pero Nevera termina en [a-z]+ de \d{4}\. Te ahorras más intereses\.$/);
     expect(screen.getByRole('radio', { name: 'Bajar la cuota' })).toHaveAccessibleDescription(/^Terminas en la misma fecha y la próxima cuota baja a \$[\d.]+\.$/);
     await userEvent.click(screen.getByRole('button', { name: 'Sí, registrar el pago' }));
     expect(await screen.findByText('Pago registrado.')).toBeInTheDocument();

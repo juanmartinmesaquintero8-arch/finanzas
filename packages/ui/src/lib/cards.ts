@@ -10,15 +10,12 @@ import type {
   CardPaymentShortcuts,
   CardView,
   FeeImpact,
-  PayFeeInput,
-  PayInstallmentInput,
   PurchaseInput,
   PurchasePreview,
   PurchasePreviewResult,
   PurchaseView,
   RateBasis,
   RateCheck,
-  SettleInput,
 } from './types';
 import type { FieldErrors, ValidationResult } from './validation';
 
@@ -30,10 +27,7 @@ export interface CardsApi {
   addPurchase(input: PurchaseInput): Promise<ActionResult>;
   updatePurchase(id: string, input: PurchaseInput): Promise<ActionResult>;
   removePurchase(id: string): Promise<ActionResult>;
-  payInstallment(id: string, input: PayInstallmentInput): Promise<ActionResult>;
   undoLastPayment(id: string, input?: { installment?: number }): Promise<ActionResult>;
-  settle(id: string, input: SettleInput): Promise<ActionResult>;
-  payFee(cardId: string, month: string, input: PayFeeInput): Promise<ActionResult>;
   undoLastFee(cardId: string, input?: { month?: string }): Promise<ActionResult>;
   /** Pago único: atajos al día del pago, desglose sin escribir nada, registro y deshacer. */
   paymentShortcuts(cardId: string, paidOn: string): Promise<CardPaymentShortcuts>;

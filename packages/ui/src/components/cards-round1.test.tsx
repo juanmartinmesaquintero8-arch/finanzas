@@ -21,7 +21,7 @@ const preview: PurchasePreview = { totalCount: 2, remainingCount: 2, installment
 
 const purchase = (over: Partial<PurchaseView> = {}): PurchaseView => ({
   id: 'p1', cardId: 'c1', description: 'Nevera', category: 'Hogar', amount: '1200000', installments: 12, paidInstallments: 0, purchaseDate: '2026-08-02', firstDueDate: '2026-09-15',
-  monthlyRatePpm: 20000, closedOn: null, dueDayAnchor: 15, paidCount: 0, installmentCount: 12, next: inst(1, '2026-12-15'), settle: { capital: '1200000', interest: '24000', total: '1224000' }, ...over,
+  monthlyRatePpm: 20000, closedOn: null, dueDayAnchor: 15, paidCount: 0, installmentCount: 12, next: inst(1, '2026-12-15'), ...over,
 });
 const card = (over: Partial<CardView> = {}): CardView => ({
   id: 'c1', name: 'Visa', dueDay: 15, cutDay: 5, paymentAccountId: 'bc', feeKind: 'FIXED_MONTHLY', feeAmount: '18000', rateBasis: 'MV', rateText: '2', monthlyRatePpm: 20000, chargesInterest: true, debt: '900000',
@@ -31,7 +31,7 @@ const card = (over: Partial<CardView> = {}): CardView => ({
 function api(over: Partial<CardsApi> = {}): CardsApi {
   const ok = () => vi.fn().mockResolvedValue({ ok: true });
   return {
-    createCard: ok(), updateCard: ok(), removeCard: ok(), addPurchase: ok(), updatePurchase: ok(), removePurchase: ok(), payInstallment: ok(), undoLastPayment: ok(), settle: ok(), payFee: ok(), undoLastFee: ok(),
+    createCard: ok(), updateCard: ok(), removeCard: ok(), addPurchase: ok(), updatePurchase: ok(), removePurchase: ok(), undoLastPayment: ok(), undoLastFee: ok(),
     paymentShortcuts: vi.fn().mockResolvedValue({ ok: true, thisMonth: '0', max: '0' }), previewCardPayment: vi.fn().mockResolvedValue({ ok: false, error: 'sin desglose' }), payCard: ok(), undoLastCardPayment: ok(),
     checkRate: vi.fn(() => ({})),
     suggestFirstDueDate: vi.fn(() => '2026-12-15'),
